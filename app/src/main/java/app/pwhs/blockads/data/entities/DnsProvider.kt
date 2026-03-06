@@ -84,13 +84,13 @@ object DnsProviders {
     )
 
     val ALL_PROVIDERS = listOf(
-        GOOGLE,
-        CLOUDFLARE,
         ADGUARD,
-        QUAD9,
+        CLOUDFLARE,
+        CLOUDFLARE_FAMILY,
+        GOOGLE,
         OPENDNS,
         OPENDNS_FAMILY,
-        CLOUDFLARE_FAMILY
+        QUAD9
     )
 
     fun getById(id: String): DnsProvider? = ALL_PROVIDERS.find { it.id == id }

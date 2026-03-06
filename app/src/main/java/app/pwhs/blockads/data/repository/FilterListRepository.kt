@@ -38,14 +38,14 @@ class FilterListRepository(
                 name = "ABPVN",
                 url = "https://abpvn.com/android/abpvn.txt",
                 description = "Vietnamese ad filter list",
-                isEnabled = true,
+                isEnabled = false,
                 isBuiltIn = true
             ),
             FilterList(
                 name = "HostsVN",
                 url = "https://raw.githubusercontent.com/bigdargon/hostsVN/master/hosts",
                 description = "Vietnamese hosts-based ad blocker",
-                isEnabled = true,
+                isEnabled = false,
                 isBuiltIn = true
             ),
             FilterList(
@@ -94,14 +94,14 @@ class FilterListRepository(
                 name = "EasyList",
                 url = "https://easylist.to/easylist/easylist.txt",
                 description = "Most popular global ad filter — blocks ads on most websites",
-                isEnabled = false,
+                isEnabled = true,
                 isBuiltIn = true
             ),
             FilterList(
                 name = "EasyPrivacy",
                 url = "https://easylist.to/easylist/easyprivacy.txt",
                 description = "Blocks tracking scripts and privacy-invasive trackers",
-                isEnabled = false,
+                isEnabled = true,
                 isBuiltIn = true
             ),
             FilterList(

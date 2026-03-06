@@ -18,7 +18,7 @@ class OnboardingViewModel(
     private val _selectedProtectionLevel = MutableStateFlow(ProtectionLevel.STANDARD)
     val selectedProtectionLevel: StateFlow<ProtectionLevel> = _selectedProtectionLevel.asStateFlow()
 
-    private val _selectedDnsProvider = MutableStateFlow(DnsProviders.CLOUDFLARE)
+    private val _selectedDnsProvider = MutableStateFlow(DnsProviders.QUAD9)
     val selectedDnsProvider: StateFlow<DnsProvider> = _selectedDnsProvider.asStateFlow()
 
     fun selectProtectionLevel(level: ProtectionLevel) {
@@ -45,15 +45,15 @@ class OnboardingViewModel(
 
     /**
      * Select a fallback DNS provider different from the primary one.
-     * Uses Google ↔ Cloudflare pairing for standard fallbacks.
+     * Uses privacy-friendly Quad9 ↔ AdGuard pairing for standard fallbacks.
      */
     private fun selectFallbackDns(primary: DnsProvider): DnsProvider {
         return when (primary.id) {
-            DnsProviders.GOOGLE.id -> DnsProviders.CLOUDFLARE
-            DnsProviders.CLOUDFLARE.id -> DnsProviders.GOOGLE
+            DnsProviders.QUAD9.id -> DnsProviders.ADGUARD
+            DnsProviders.ADGUARD.id -> DnsProviders.QUAD9
             else -> DnsProviders.ALL_PROVIDERS.firstOrNull {
                 it.id != primary.id
-            } ?: DnsProviders.CLOUDFLARE
+            } ?: DnsProviders.QUAD9
         }
     }
 }

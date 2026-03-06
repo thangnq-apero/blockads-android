@@ -56,15 +56,15 @@ class DnsProviderViewModel(
             appPrefs.setDnsProviderId(provider.id)
             appPrefs.setUpstreamDns(provider.ipAddress)
             // Set fallback DNS to a different provider for redundancy
-            // Use Google <-> Cloudflare pairing, or first different standard provider
+            // Use privacy-friendly Quad9 <-> AdGuard pairing
             val fallbackProvider = when (provider.id) {
-                DnsProviders.GOOGLE.id -> DnsProviders.CLOUDFLARE
-                DnsProviders.CLOUDFLARE.id -> DnsProviders.GOOGLE
+                DnsProviders.QUAD9.id -> DnsProviders.ADGUARD
+                DnsProviders.ADGUARD.id -> DnsProviders.QUAD9
                 else -> {
-                    // Find first standard provider different from selected
+                    // Find first privacy provider different from selected
                     DnsProviders.ALL_PROVIDERS.firstOrNull {
-                        it.id != provider.id && it.category == DnsCategory.STANDARD
-                    } ?: DnsProviders.CLOUDFLARE
+                        it.id != provider.id && it.category == DnsCategory.PRIVACY
+                    } ?: DnsProviders.QUAD9
                 }
             }
             appPrefs.setFallbackDns(fallbackProvider.ipAddress)

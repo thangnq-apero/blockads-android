@@ -34,9 +34,9 @@ import app.pwhs.blockads.data.entities.DnsProvider
 import app.pwhs.blockads.data.entities.DnsProviders
 
 private val ONBOARDING_DNS_PROVIDERS = listOf(
+    DnsProviders.ADGUARD,
     DnsProviders.CLOUDFLARE,
     DnsProviders.GOOGLE,
-    DnsProviders.ADGUARD,
     DnsProviders.QUAD9
 )
 
@@ -74,7 +74,7 @@ fun DnsServerStep(
         Spacer(modifier = Modifier.height(32.dp))
 
         ONBOARDING_DNS_PROVIDERS.forEachIndexed { index, provider ->
-            val isRecommended = provider.id == DnsProviders.CLOUDFLARE.id
+            val isRecommended = provider.id == DnsProviders.QUAD9.id
             DnsProviderCard(
                 provider = provider,
                 isSelected = selectedProvider.id == provider.id,

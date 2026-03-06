@@ -20,9 +20,9 @@ class ProfileManager(
 
         /** URLs for the Default profile: basic ads & trackers. */
         val DEFAULT_FILTER_URLS = setOf(
-            "https://abpvn.com/android/abpvn.txt",
-            "https://raw.githubusercontent.com/bigdargon/hostsVN/master/hosts",
-            "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts"
+            "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts",
+            "https://easylist.to/easylist/easylist.txt",
+            "https://easylist.to/easylist/easyprivacy.txt"
         )
 
         /** URLs for the Strict profile: all ads, trackers, analytics. */
@@ -45,8 +45,8 @@ class ProfileManager(
 
         /** URLs for the Gaming profile: basic ads only. */
         val GAMING_FILTER_URLS = setOf(
-            "https://abpvn.com/android/abpvn.txt",
-            "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts"
+            "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts",
+            "https://easylist.to/easylist/easylist.txt"
         )
     }
 
