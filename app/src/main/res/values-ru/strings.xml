@@ -229,6 +229,7 @@
     <string name="settings_save_doh_url">Сохранить URL DoH</string>
     <string name="settings_dot_server">Сервер DoT (имя хоста или IP)</string>
     <string name="settings_dot_server_placeholder">dns.google</string>
+    <string name="settings_doq_server_url">URL-адрес сервера DoQ</string>
     <string name="settings_upstream_dns">Основной DNS-сервер</string>
     <string name="settings_fallback_dns">Резервный DNS-сервер</string>
     <string name="settings_custom_dns_server">Пользовательский DNS-сервер</string>

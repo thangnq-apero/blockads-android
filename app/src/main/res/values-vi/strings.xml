@@ -229,6 +229,7 @@
     <string name="settings_save_doh_url">Lưu URL DoH</string>
     <string name="settings_dot_server">Máy chủ DoT (hostname hoặc IP)</string>
     <string name="settings_dot_server_placeholder">dns.google</string>
+    <string name="settings_doq_server_url">URL máy chủ DoQ</string>
     <string name="settings_upstream_dns">Máy chủ DNS</string>
     <string name="settings_fallback_dns">Máy chủ DNS dự phòng</string>
     <string name="settings_custom_dns_server">Máy chủ DNS tùy chỉnh</string>

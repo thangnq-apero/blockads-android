@@ -199,6 +199,7 @@
     <string name="settings_save_doh_url">บันทึก URL DoH</string>
     <string name="settings_dot_server">เซิร์ฟเวอร์ DoT (ชื่อโฮสต์หรือ IP)</string>
     <string name="settings_dot_server_placeholder">dns.google</string>
+    <string name="settings_doq_server_url">URL เซิร์ฟเวอร์ DoQ</string>
     <string name="settings_upstream_dns">เซิร์ฟเวอร์ DNS ต้นทาง</string>
     <string name="settings_fallback_dns">เซิร์ฟเวอร์ DNS สำรอง</string>
     <string name="settings_custom_dns_server">เซิร์ฟเวอร์ DNS ที่กำหนดเอง</string>

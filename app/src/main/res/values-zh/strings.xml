@@ -199,6 +199,7 @@
     <string name="settings_save_doh_url">保存DoH URL</string>
     <string name="settings_dot_server">DoT服务器（主机名或IP）</string>
     <string name="settings_dot_server_placeholder">dns.google</string>
+    <string name="settings_doq_server_url">DoQ 服务器 URL</string>
     <string name="settings_upstream_dns">上游DNS服务器</string>
     <string name="settings_fallback_dns">备用DNS服务器</string>
     <string name="settings_save_custom_dns">Save DNS</string>

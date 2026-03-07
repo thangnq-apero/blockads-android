@@ -199,6 +199,7 @@
     <string name="settings_save_doh_url">Guardar URL DoH</string>
     <string name="settings_dot_server">Servidor DoT (nombre de host o IP)</string>
     <string name="settings_dot_server_placeholder">dns.google</string>
+    <string name="settings_doq_server_url">URL del servidor DoQ</string>
     <string name="settings_upstream_dns">Servidor DNS principal</string>
     <string name="settings_fallback_dns">Servidor DNS de respaldo</string>
     <string name="settings_custom_dns_server">Servidor DNS personalizado</string>

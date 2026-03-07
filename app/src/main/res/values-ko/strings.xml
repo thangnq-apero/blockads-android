@@ -199,6 +199,7 @@
     <string name="settings_save_doh_url">DoH URL 저장</string>
     <string name="settings_dot_server">DoT 서버 (호스트명 또는 IP)</string>
     <string name="settings_dot_server_placeholder">dns.google</string>
+    <string name="settings_doq_server_url">DoQ 서버 URL</string>
     <string name="settings_upstream_dns">업스트림 DNS 서버</string>
     <string name="settings_fallback_dns">대체 DNS 서버</string>
     <string name="settings_save_custom_dns">Save DNS</string>
