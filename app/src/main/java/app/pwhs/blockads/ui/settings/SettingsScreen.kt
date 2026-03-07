@@ -20,11 +20,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
 import androidx.compose.material.icons.automirrored.filled.Chat
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AppBlocking
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.Block
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Download
@@ -49,13 +47,11 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -78,10 +74,8 @@ import app.pwhs.blockads.R
 import app.pwhs.blockads.data.datastore.AppPreferences
 import app.pwhs.blockads.data.entities.DnsProtocol
 import app.pwhs.blockads.ui.event.UiEventEffect
-import app.pwhs.blockads.ui.settings.component.AddDomainDialog
 import app.pwhs.blockads.ui.settings.component.DnsResponseTypeDialog
-import app.pwhs.blockads.ui.settings.component.FrequencyDialog
-import app.pwhs.blockads.ui.settings.component.NotificationDialog
+import app.pwhs.blockads.ui.settings.component.FireWall
 import app.pwhs.blockads.ui.settings.component.SectionHeader
 import app.pwhs.blockads.ui.settings.component.SettingsToggleItem
 import app.pwhs.blockads.ui.theme.DangerRed
@@ -121,8 +115,6 @@ fun SettingsScreen(
     val autoUpdateFrequency by viewModel.autoUpdateFrequency.collectAsStateWithLifecycle()
     val autoUpdateWifiOnly by viewModel.autoUpdateWifiOnly.collectAsStateWithLifecycle()
     val autoUpdateNotification by viewModel.autoUpdateNotification.collectAsStateWithLifecycle()
-    var showFrequencyDialog by remember { mutableStateOf(false) }
-    var showNotificationDialog by remember { mutableStateOf(false) }
 
     val dnsResponseType by viewModel.dnsResponseType.collectAsStateWithLifecycle()
     var showDnsResponseTypeDialog by remember { mutableStateOf(false) }
@@ -135,7 +127,6 @@ fun SettingsScreen(
 
     var editCustomDns by remember(customDnsDisplay) { mutableStateOf(customDnsDisplay) }
     var editFallbackDns by remember(fallbackDns) { mutableStateOf(fallbackDns) }
-    var showAddDomainDialog by remember { mutableStateOf(false) }
 
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
@@ -678,296 +669,41 @@ fun SettingsScreen(
                 description = stringResource(R.string.settings_category_filters_desc)
             )
             // Firewall (Per-App Internet Control)
-            Card(
-                onClick = { navigator.navigate(FirewallScreenDestination) },
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                shape = RoundedCornerShape(16.dp)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Default.Security, contentDescription = null,
-                        tint = MaterialTheme.colorScheme.secondary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            stringResource(R.string.settings_firewall),
-                            style = MaterialTheme.typography.titleSmall
-                        )
-                        Text(
-                            stringResource(R.string.settings_firewall_desc),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = TextSecondary
-                        )
-                    }
-                    Icon(
-                        Icons.AutoMirrored.Filled.ArrowForwardIos,
-                        contentDescription = null,
-                        tint = TextSecondary,
-                        modifier = Modifier.size(16.dp)
-                    )
+            FireWall(
+                modifier = Modifier.fillMaxWidth(),
+                onNavigateToFirewall = {
+                    navigator.navigate(FirewallScreenDestination)
+                },
+                onNavigateToFilterSetup = {
+                    navigator.navigate(FilterSetupScreenDestination)
+                },
+                whitelistDomains = whitelistDomains,
+                filterLists = filterLists,
+                autoUpdateNotification = autoUpdateNotification,
+                autoUpdateFrequency = autoUpdateFrequency,
+                autoUpdateWifiOnly = autoUpdateWifiOnly,
+                autoUpdateEnabled = autoUpdateEnabled,
+                onRemoveWhitelistDomain = {
+                    viewModel.removeWhitelistDomain(it)
+                },
+                onSetAutoUpdateWifiOnly = {
+                    viewModel.setAutoUpdateWifiOnly(it)
+                },
+                onSetAutoUpdateFrequency = {
+                    viewModel.setAutoUpdateFrequency(it)
+                },
+                onSetAutoUpdateNotification = {
+                    viewModel.setAutoUpdateNotification(it)
+                },
+                onSetAutoUpdateEnable = {
+                    viewModel.setAutoUpdateEnabled(it)
+                },
+                onAddWhitelistDomain = {
+                    viewModel.addWhitelistDomain(it)
                 }
-                Spacer(modifier = Modifier.height(12.dp))
-                HorizontalDivider(
-                    modifier = Modifier.padding(vertical = 16.dp),
-                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)
-                )
-                Column {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            Icons.Default.Block, contentDescription = null,
-                            tint = MaterialTheme.colorScheme.secondary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                stringResource(R.string.settings_whitelist_domains),
-                                style = MaterialTheme.typography.titleSmall
-                            )
-                            Text(
-                                stringResource(R.string.settings_whitelist_domains_desc),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = TextSecondary
-                            )
-                        }
-                    }
-
-                    if (whitelistDomains.isNotEmpty()) {
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)
-                        )
-                    }
-
-                    whitelistDomains.forEach { domain ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = domain.domain,
-                                modifier = Modifier.weight(1f),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onBackground
-                            )
-                            IconButton(
-                                onClick = { viewModel.removeWhitelistDomain(domain) },
-                                modifier = Modifier.size(32.dp)
-                            ) {
-                                Icon(
-                                    Icons.Default.Delete,
-                                    contentDescription = "Remove",
-                                    tint = TextSecondary.copy(alpha = 0.5f),
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
-                        }
-                    }
-
-                    TextButton(
-                        onClick = { showAddDomainDialog = true },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(8.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.Add,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(stringResource(R.string.settings_add_domain))
-                    }
-                }
-                Spacer(modifier = Modifier.height(12.dp))
-                HorizontalDivider(
-                    modifier = Modifier.padding(vertical = 16.dp),
-                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)
-                )
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Default.FilterList, contentDescription = null,
-                        tint = MaterialTheme.colorScheme.secondary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            stringResource(R.string.filter_setup_title),
-                            style = MaterialTheme.typography.titleSmall
-                        )
-                        Text(
-                            stringResource(
-                                R.string.settings_filter_lists,
-                                filterLists.count { it.isEnabled }
-                            ),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = TextSecondary
-                        )
-                    }
-                    Icon(
-                        Icons.AutoMirrored.Filled.ArrowForwardIos,
-                        contentDescription = null,
-                        tint = TextSecondary,
-                        modifier = Modifier.size(16.dp)
-                    )
-                }
-
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    shape = RoundedCornerShape(16.dp)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        SettingsToggleItem(
-                            icon = Icons.Default.Download,
-                            title = stringResource(R.string.settings_auto_update_enabled),
-                            subtitle = stringResource(R.string.settings_auto_update_enabled_desc),
-                            isChecked = autoUpdateEnabled,
-                            onCheckedChange = { viewModel.setAutoUpdateEnabled(it) }
-                        )
-
-                        if (autoUpdateEnabled) {
-                            HorizontalDivider(
-                                modifier = Modifier.padding(vertical = 16.dp),
-                                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)
-                            )
-
-                            // Update frequency
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { showFrequencyDialog = true }
-                                    .padding(vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        stringResource(R.string.settings_auto_update_frequency),
-                                        style = MaterialTheme.typography.titleSmall
-                                    )
-                                    Text(
-                                        when (autoUpdateFrequency) {
-                                            AppPreferences.UPDATE_FREQUENCY_6H -> stringResource(
-                                                R.string.settings_auto_update_frequency_6h
-                                            )
-
-                                            AppPreferences.UPDATE_FREQUENCY_12H -> stringResource(
-                                                R.string.settings_auto_update_frequency_12h
-                                            )
-
-                                            AppPreferences.UPDATE_FREQUENCY_24H -> stringResource(
-                                                R.string.settings_auto_update_frequency_24h
-                                            )
-
-                                            AppPreferences.UPDATE_FREQUENCY_48H -> stringResource(
-                                                R.string.settings_auto_update_frequency_48h
-                                            )
-
-                                            AppPreferences.UPDATE_FREQUENCY_MANUAL -> stringResource(
-                                                R.string.settings_auto_update_frequency_manual
-                                            )
-
-                                            else -> stringResource(R.string.settings_auto_update_frequency_24h)
-                                        },
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = TextSecondary
-                                    )
-                                }
-                                Icon(
-                                    Icons.AutoMirrored.Filled.ArrowForwardIos,
-                                    contentDescription = null,
-                                    tint = TextSecondary,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
-
-                            HorizontalDivider(
-                                modifier = Modifier.padding(vertical = 16.dp),
-                                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)
-                            )
-
-                            // Wi-Fi only
-                            SettingsToggleItem(
-                                icon = Icons.Default.Wifi,
-                                title = stringResource(R.string.settings_auto_update_wifi_only),
-                                subtitle = stringResource(R.string.settings_auto_update_wifi_only_desc),
-                                isChecked = autoUpdateWifiOnly,
-                                onCheckedChange = { viewModel.setAutoUpdateWifiOnly(it) }
-                            )
-
-                            HorizontalDivider(
-                                modifier = Modifier.padding(vertical = 16.dp),
-                                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)
-                            )
-
-                            // Notification preference
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { showNotificationDialog = true }
-                                    .padding(vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        stringResource(R.string.settings_auto_update_notification),
-                                        style = MaterialTheme.typography.titleSmall
-                                    )
-                                    Text(
-                                        when (autoUpdateNotification) {
-                                            AppPreferences.NOTIFICATION_NORMAL -> stringResource(
-                                                R.string.settings_auto_update_notification_normal
-                                            )
-
-                                            AppPreferences.NOTIFICATION_SILENT -> stringResource(
-                                                R.string.settings_auto_update_notification_silent
-                                            )
-
-                                            AppPreferences.NOTIFICATION_NONE -> stringResource(R.string.settings_auto_update_notification_none)
-                                            else -> stringResource(R.string.settings_auto_update_notification_normal)
-                                        },
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = TextSecondary
-                                    )
-                                }
-                                Icon(
-                                    Icons.AutoMirrored.Filled.ArrowForwardIos,
-                                    contentDescription = null,
-                                    tint = TextSecondary,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(24.dp))
-            }
+            )
 
             // Data: Export/Import, clear logs
-
             Spacer(modifier = Modifier.height(24.dp))
 
             // Notifications: Daily summary, milestones
@@ -1254,42 +990,6 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(200.dp))
         }
 
-
-        // Add domain whitelist dialog
-        if (showAddDomainDialog) {
-            AddDomainDialog(
-                onDismiss = { showAddDomainDialog = false },
-                onAdd = { domain ->
-                    viewModel.addWhitelistDomain(domain)
-                    showAddDomainDialog = false
-                }
-            )
-        }
-
-
-        // Frequency dialog
-        if (showFrequencyDialog) {
-            FrequencyDialog(
-                autoUpdateFrequency = autoUpdateFrequency,
-                onUpdateFrequencyChange = { freq ->
-                    viewModel.setAutoUpdateFrequency(freq)
-                    showFrequencyDialog = false
-                },
-                onDismiss = { showFrequencyDialog = false }
-            )
-        }
-
-        // Notification dialog
-        if (showNotificationDialog) {
-            NotificationDialog(
-                autoUpdateNotification = autoUpdateNotification,
-                onUpdateNotification = { type ->
-                    viewModel.setAutoUpdateNotification(type)
-                    showNotificationDialog = false
-                },
-                onDismiss = { showNotificationDialog = false }
-            )
-        }
 
         // DNS Response Type dialog
         if (showDnsResponseTypeDialog) {

@@ -139,7 +139,10 @@ fun CustomDnsDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = { onSave(editDns, editFallback) }) {
+            TextButton(
+                onClick = { onSave(editDns, editFallback) },
+                enabled = editDns.isNotBlank()
+            ) {
                 Text(stringResource(R.string.dns_custom_save))
             }
         },

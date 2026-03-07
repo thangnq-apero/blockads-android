@@ -51,10 +51,42 @@ class DnsProviderViewModel(
         providerId == null && DnsProviders.getByIp(upstreamDns) == null
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
+    /**
+     * Unified display value for the custom DNS input.
+     * Shows the current DNS server in the format the user originally entered:
+     * - Plain DNS: IP address (e.g., "8.8.8.8")
+     * - DoH: full URL (e.g., "https://dns.google/dns-query")
+     * - DoT: tls:// prefix + server (e.g., "tls://dns.google")
+     */
+    val customDnsDisplay: StateFlow<String> = combine(
+        appPrefs.dnsProtocol,
+        appPrefs.upstreamDns,
+        appPrefs.dohUrl
+    ) { protocol, upstream, doh ->
+        when (protocol) {
+            DnsProtocol.DOH -> doh
+            DnsProtocol.DOT -> "tls://$upstream"
+            DnsProtocol.PLAIN -> upstream
+        }
+    }.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5000),
+        AppPreferences.DEFAULT_UPSTREAM_DNS
+    )
+
     fun selectProvider(provider: DnsProvider) {
         viewModelScope.launch {
             appPrefs.setDnsProviderId(provider.id)
             appPrefs.setUpstreamDns(provider.ipAddress)
+
+            // Set protocol based on provider capabilities
+            if (provider.dohUrl != null) {
+                appPrefs.setDnsProtocol(DnsProtocol.DOH)
+                appPrefs.setDohUrl(provider.dohUrl)
+            } else {
+                appPrefs.setDnsProtocol(DnsProtocol.PLAIN)
+            }
+
             // Set fallback DNS to a different provider for redundancy
             // Use privacy-friendly Quad9 <-> AdGuard pairing
             val fallbackProvider = when (provider.id) {
@@ -74,12 +106,19 @@ class DnsProviderViewModel(
 
     fun setCustomDns(upstream: String, fallback: String) {
         val trimmed = upstream.trim()
+        if (trimmed.isBlank()) return // Guard against empty input
+
         viewModelScope.launch {
             appPrefs.setDnsProviderId(null)
             when {
                 trimmed.startsWith("https://", ignoreCase = true) -> {
                     appPrefs.setDnsProtocol(DnsProtocol.DOH)
                     appPrefs.setDohUrl(trimmed)
+                    // Extract host from DoH URL for upstream fallback identification
+                    val host = try {
+                        java.net.URL(trimmed).host
+                    } catch (_: Exception) { trimmed }
+                    appPrefs.setUpstreamDns(host)
                 }
                 trimmed.startsWith("tls://", ignoreCase = true) -> {
                     appPrefs.setDnsProtocol(DnsProtocol.DOT)
@@ -90,7 +129,10 @@ class DnsProviderViewModel(
                     appPrefs.setUpstreamDns(trimmed)
                 }
             }
-            appPrefs.setFallbackDns(fallback)
+            val fallbackTrimmed = fallback.trim()
+            if (fallbackTrimmed.isNotBlank()) {
+                appPrefs.setFallbackDns(fallbackTrimmed)
+            }
             AdBlockVpnService.requestRestart(getApplication<Application>().applicationContext)
         }
     }

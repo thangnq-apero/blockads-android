@@ -12,7 +12,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -47,6 +46,7 @@ fun DnsProviderScreen(
 ) {
     val selectedProviderId by viewModel.selectedProviderId.collectAsStateWithLifecycle()
     val customDnsEnabled by viewModel.customDnsEnabled.collectAsStateWithLifecycle()
+    val customDnsDisplay by viewModel.customDnsDisplay.collectAsStateWithLifecycle()
     val upstreamDns by viewModel.upstreamDns.collectAsStateWithLifecycle()
     val fallbackDns by viewModel.fallbackDns.collectAsStateWithLifecycle()
 
@@ -120,7 +120,7 @@ fun DnsProviderScreen(
             item {
                 CustomDnsCard(
                     isSelected = customDnsEnabled,
-                    upstreamDns = upstreamDns,
+                    upstreamDns = customDnsDisplay,
                     fallbackDns = fallbackDns,
                     onClick = { showCustomDialog = true }
                 )
@@ -132,7 +132,7 @@ fun DnsProviderScreen(
 
     if (showCustomDialog) {
         CustomDnsDialog(
-            upstreamDns = upstreamDns,
+            upstreamDns = customDnsDisplay,
             fallbackDns = fallbackDns,
             onDismiss = { showCustomDialog = false },
             onSave = { upstream, fallback ->

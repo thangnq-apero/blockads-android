@@ -238,6 +238,8 @@ class AdBlockVpnService : VpnService() {
                 val upstreamDns = appPrefs.upstreamDns.first()
                 val fallbackDns = appPrefs.fallbackDns.first()
                 val dnsResponseType = appPrefs.dnsResponseType.first()
+                val dnsProtocol = appPrefs.dnsProtocol.first()
+                val dohUrl = appPrefs.dohUrl.first()
                 val whitelistedApps = appPrefs.getWhitelistedAppsSnapshot()
                 val safeSearchEnabled = appPrefs.safeSearchEnabled.first()
                 val youtubeRestrictedMode = appPrefs.youtubeRestrictedMode.first()
@@ -362,6 +364,8 @@ class AdBlockVpnService : VpnService() {
                     upstreamDns,
                     fallbackDns,
                     dnsResponseType,
+                    dnsProtocol,
+                    dohUrl,
                     safeSearchEnabled,
                     youtubeRestrictedMode,
                     safeSearchIpCache
@@ -425,6 +429,8 @@ class AdBlockVpnService : VpnService() {
         upstreamDns: String,
         fallbackDns: String,
         dnsResponseType: String,
+        dnsProtocol: DnsProtocol,
+        dohUrl: String,
         safeSearchEnabled: Boolean,
         youtubeRestrictedMode: Boolean,
         safeSearchIpCache: Map<String, ByteArray>
@@ -455,6 +461,8 @@ class AdBlockVpnService : VpnService() {
                         upstreamDns,
                         fallbackDns,
                         dnsResponseType,
+                        dnsProtocol,
+                        dohUrl,
                         safeSearchEnabled,
                         youtubeRestrictedMode,
                         safeSearchIpCache
@@ -485,6 +493,8 @@ class AdBlockVpnService : VpnService() {
         upstreamDns: String,
         fallbackDns: String,
         dnsResponseType: String,
+        dnsProtocol: DnsProtocol,
+        dohUrl: String,
         safeSearchEnabled: Boolean,
         youtubeRestrictedMode: Boolean,
         safeSearchIpCache: Map<String, ByteArray>
@@ -661,7 +671,7 @@ class AdBlockVpnService : VpnService() {
             }
         } else {
             // Forward to upstream DNS
-            forwardDnsQuery(query, outputStream, upstreamDns, fallbackDns)
+            forwardDnsQuery(query, outputStream, upstreamDns, fallbackDns, dnsProtocol, dohUrl)
 
             val elapsed = System.currentTimeMillis() - startTime
             logDnsQuery(domain, false, query.queryType, elapsed, appName)
@@ -673,17 +683,10 @@ class AdBlockVpnService : VpnService() {
         query: DnsPacketParser.DnsQuery,
         outputStream: FileOutputStream,
         upstreamDns: String,
-        fallbackDns: String
+        fallbackDns: String,
+        dnsProtocol: DnsProtocol,
+        dohUrl: String
     ) {
-        // Note: Using runBlocking here is intentional and necessary. This method is called
-        // from processPackets(), which is a blocking I/O loop reading from a FileInputStream.
-        // The entire packet processing pipeline is synchronous by design (VPN TUN interface
-        // requires blocking reads). Making this suspend would require converting the entire
-        // packet processing loop to coroutines, which is not compatible with blocking I/O
-        // on FileInputStream/FileOutputStream.
-        val (dnsProtocol, dohUrl) = runBlocking {
-            appPrefs.dnsProtocol.first() to appPrefs.dohUrl.first()
-        }
 
         // Try primary DNS server first
         var success = tryDnsQuery(query, outputStream, upstreamDns, dohUrl, dnsProtocol, false)

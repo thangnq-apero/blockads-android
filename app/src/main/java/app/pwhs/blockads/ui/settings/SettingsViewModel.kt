@@ -172,11 +172,18 @@ class SettingsViewModel(
      */
     fun setCustomDnsServer(input: String) {
         val trimmed = input.trim()
+        if (trimmed.isBlank()) return // Guard against empty input
+
         viewModelScope.launch {
             when {
                 trimmed.startsWith("https://", ignoreCase = true) -> {
                     appPrefs.setDnsProtocol(DnsProtocol.DOH)
                     appPrefs.setDohUrl(trimmed)
+                    // Extract host from DoH URL for upstream fallback identification
+                    val host = try {
+                        java.net.URL(trimmed).host
+                    } catch (_: Exception) { trimmed }
+                    appPrefs.setUpstreamDns(host)
                 }
                 trimmed.startsWith("tls://", ignoreCase = true) -> {
                     appPrefs.setDnsProtocol(DnsProtocol.DOT)
