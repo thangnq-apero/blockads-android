@@ -94,6 +94,7 @@ import com.ramcosta.composedestinations.generated.destinations.AppWhitelistScree
 import com.ramcosta.composedestinations.generated.destinations.AppearanceScreenDestination
 import com.ramcosta.composedestinations.generated.destinations.DnsProviderScreenDestination
 import com.ramcosta.composedestinations.generated.destinations.FilterSetupScreenDestination
+import com.ramcosta.composedestinations.generated.destinations.FirewallScreenDestination
 import com.ramcosta.composedestinations.generated.destinations.ProfileScreenDestination
 import com.ramcosta.composedestinations.navigation.DestinationsNavigator
 import org.koin.androidx.compose.koinViewModel
@@ -678,7 +679,7 @@ fun SettingsScreen(
             )
             // Firewall (Per-App Internet Control)
             Card(
-                onClick = { navigator.navigate(FilterSetupScreenDestination) },
+                onClick = { navigator.navigate(FirewallScreenDestination) },
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 shape = RoundedCornerShape(16.dp)
             ) {
