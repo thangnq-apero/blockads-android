@@ -66,7 +66,7 @@ val appModule = module {
     }
 
     // DNS Clients
-    single { DohClient(get()) }
+    single { DohClient() }
     single { DotClient() }
     single { DoqClient(androidContext()) }
 

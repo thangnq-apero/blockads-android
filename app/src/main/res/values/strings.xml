@@ -417,6 +417,11 @@
     <string name="stats_per_app">Per-App Statistics</string>
     <string name="stats_app_queries_blocked">%1$s queries · %2$s blocked</string>
 
+    <!-- VPN Connecting Phases (progress feedback) -->
+    <string name="vpn_phase_loading_filters">Loading filter lists…</string>
+    <string name="vpn_phase_preparing_dns">Preparing DNS…</string>
+    <string name="vpn_phase_establishing">Establishing VPN tunnel…</string>
+
     <!-- Notification Improvements -->
     <string name="vpn_notification_stats_today">%1$d ads blocked today | Uptime %2$s</string>
     <string name="vpn_notification_action_pause">Pause 1h</string>

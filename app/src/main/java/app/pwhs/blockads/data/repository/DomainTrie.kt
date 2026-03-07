@@ -136,6 +136,75 @@ class DomainTrie {
                 null
             }
         }
+
+        /**
+         * Reconstruct a mutable DomainTrie from a serialized binary file.
+         * This allows incremental updates: load existing Trie → add new domains → re-serialize.
+         *
+         * Uses BFS traversal of the binary format to rebuild the in-memory tree.
+         * Domains are extracted by tracking the path of labels from root to each terminal node.
+         */
+        fun loadFromBinary(file: File): DomainTrie? {
+            if (!file.exists() || file.length() < 16) return null
+            return try {
+                val raf = RandomAccessFile(file, "r")
+                val channel = raf.channel
+                val buffer = channel.map(FileChannel.MapMode.READ_ONLY, 0, file.length())
+                channel.close()
+                raf.close()
+
+                val magic = buffer.getInt(0)
+                val version = buffer.getInt(4)
+                if (magic != MAGIC || version != VERSION) return null
+
+                val domainCount = buffer.getInt(12)
+
+                // BFS through binary to extract all terminal domains
+                val trie = DomainTrie()
+                // Stack: (nodeOffset, reversedLabelsFromRoot)
+                // We reconstruct domains by collecting labels during tree traversal
+                data class TraversalItem(val offset: Int, val labels: List<String>)
+                val stack = ArrayDeque<TraversalItem>()
+                stack.add(TraversalItem(16, emptyList())) // root at headerSize=16
+
+                while (stack.isNotEmpty()) {
+                    val item = stack.removeFirst()
+                    val nodeOffset = item.offset
+
+                    val isTerminal = buffer.get(nodeOffset).toInt() != 0
+                    if (isTerminal && item.labels.isNotEmpty()) {
+                        // Reconstruct domain: labels are in reversed order (com, google, ads)
+                        // → domain is "ads.google.com"
+                        val domain = item.labels.reversed().joinToString(".")
+                        trie.add(domain)
+                    }
+
+                    var pos = nodeOffset + 1 // skip isTerminal
+                    val childCount = buffer.getShort(pos).toInt() and 0xFFFF
+                    pos += 2
+
+                    for (c in 0 until childCount) {
+                        val labelLen = buffer.getShort(pos).toInt() and 0xFFFF
+                        pos += 2
+                        val labelBytes = ByteArray(labelLen)
+                        for (b in 0 until labelLen) {
+                            labelBytes[b] = buffer.get(pos + b)
+                        }
+                        val label = String(labelBytes, Charsets.UTF_8)
+                        val childOffset = buffer.getInt(pos + labelLen)
+                        pos += labelLen + 4
+
+                        stack.add(TraversalItem(childOffset, item.labels + label))
+                    }
+                }
+
+                Timber.d("Loaded ${trie.size} domains from binary (expected $domainCount)")
+                trie
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to load DomainTrie from binary")
+                null
+            }
+        }
     }
 
     /**

@@ -432,6 +432,9 @@
     <string name="vpn_notification_stats_today">%1$d ads blocked today | Uptime %2$s</string>
     <string name="vpn_notification_action_pause">Pause 1h</string>
     <string name="vpn_notification_action_stop">Stop</string>
+    <string name="vpn_phase_loading_filters">Cargando filtros…</string>
+    <string name="vpn_phase_preparing_dns">Preparando DNS…</string>
+    <string name="vpn_phase_establishing">Estableciendo túnel VPN…</string>
     <string name="vpn_paused_title">BlockAds paused</string>
     <string name="vpn_paused_text">Ad blocking paused for 1 hour. Will resume automatically.</string>
     <string name="daily_summary_channel_name">Daily Summary</string>

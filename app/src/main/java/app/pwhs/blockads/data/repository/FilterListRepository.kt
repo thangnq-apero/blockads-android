@@ -352,8 +352,12 @@ class FilterListRepository(
 
     /**
      * Load all enabled filter lists and merge into Tries.
-     * Builds in-memory Trie → serializes to binary file → mmap for near-zero heap.
-     * On subsequent startups, reuses existing binary if cache files haven't changed.
+     *
+     * Three loading strategies:
+     * 1. **Cache HIT** — fingerprint unchanged → mmap existing binary (~50ms)
+     * 2. **Incremental ADD** — only new filters enabled, none removed/changed
+     *    → load existing Trie from binary, parse only new filters, re-serialize
+     * 3. **Full REBUILD** — filters removed or changed → rebuild everything
      */
     suspend fun loadAllEnabledFilters(): Result<Int> = withContext(Dispatchers.IO) {
         try {
@@ -370,10 +374,79 @@ class FilterListRepository(
             trieDir.mkdirs()
             val adTrieFile = File(trieDir, "ad_domains.trie")
             val secTrieFile = File(trieDir, "security_domains.trie")
+            val fingerprintFile = File(trieDir, "trie_fingerprint.txt")
 
-            // ── Phase 1: Ad domains ──────────────────────────────────
-            // Build, serialize, then RELEASE the in-memory trie before
-            // starting security domains. This halves peak heap usage.
+            // ── Build per-filter fingerprints ──
+            val currentFpMap = buildFingerprintMap(enabledLists)
+            val currentFingerprint = currentFpMap.entries
+                .sortedBy { it.key }
+                .joinToString(";") { "${it.key}:${it.value}" }
+
+            val savedFingerprint = try {
+                if (fingerprintFile.exists()) fingerprintFile.readText() else ""
+            } catch (_: Exception) { "" }
+
+            // ── Strategy 1: Cache HIT — nothing changed ──
+            if (currentFingerprint == savedFingerprint
+                && adTrieFile.exists() && adTrieFile.length() > 0
+            ) {
+                adTrie = DomainTrie.loadFromMmap(adTrieFile)
+                securityTrie = if (secTrieFile.exists() && secTrieFile.length() > 0) {
+                    DomainTrie.loadFromMmap(secTrieFile)
+                } else null
+
+                val elapsed = System.currentTimeMillis() - startTime
+                val totalCount = (adTrie?.size ?: 0) + (securityTrie?.size ?: 0)
+                Timber.d("Trie cache HIT — loaded $totalCount domains via mmap in ${elapsed}ms")
+                return@withContext Result.success(totalCount)
+            }
+
+            // ── Determine what changed ──
+            val savedFpMap = parseFingerprintMap(savedFingerprint)
+            val currentIds = currentFpMap.keys
+            val savedIds = savedFpMap.keys
+
+            val addedFilterIds = currentIds - savedIds
+            val removedFilterIds = savedIds - currentIds
+            val changedFilterIds = currentIds.intersect(savedIds)
+                .filter { currentFpMap[it] != savedFpMap[it] }
+                .toSet()
+
+            val isAddOnly = removedFilterIds.isEmpty() && changedFilterIds.isEmpty()
+                && addedFilterIds.isNotEmpty()
+                && adTrieFile.exists() && adTrieFile.length() > 0
+
+            if (isAddOnly) {
+                // ── Strategy 2: Incremental ADD — only new filters ──
+                Timber.d("Trie INCREMENTAL — ${addedFilterIds.size} new filter(s), loading existing + adding new")
+
+                val addedFilters = enabledLists.filter { it.id in addedFilterIds }
+
+                val adCount = incrementalAdd(
+                    addedFilters.filter { it.category != FilterList.CATEGORY_SECURITY },
+                    adTrieFile
+                )
+                val secCount = incrementalAdd(
+                    addedFilters.filter { it.category == FilterList.CATEGORY_SECURITY },
+                    secTrieFile
+                )
+
+                adTrie = if (adTrieFile.exists() && adTrieFile.length() > 0) {
+                    DomainTrie.loadFromMmap(adTrieFile)
+                } else null
+                securityTrie = if (secTrieFile.exists() && secTrieFile.length() > 0) {
+                    DomainTrie.loadFromMmap(secTrieFile)
+                } else null
+
+                saveFingerprintAndLog(fingerprintFile, currentFingerprint, startTime, "INCREMENTAL")
+                return@withContext Result.success(
+                    (adTrie?.size ?: 0) + (securityTrie?.size ?: 0)
+                )
+            }
+
+            // ── Strategy 3: Full REBUILD ──
+            Timber.d("Trie FULL REBUILD — removed=${removedFilterIds.size}, changed=${changedFilterIds.size}, added=${addedFilterIds.size}")
+
             val adFilters =
                 enabledLists.filter { it.category != FilterList.CATEGORY_SECURITY }
             var adCount = 0
@@ -398,10 +471,11 @@ class FilterListRepository(
                 if (adCount > 0) {
                     adTrieBuilder.saveToBinary(adTrieFile)
                 }
-                adTrieBuilder.clear() // Release heap before phase 2
+                adTrieBuilder.clear()
+            } else {
+                adTrieFile.delete()
             }
 
-            // ── Phase 2: Security domains ────────────────────────────
             val secFilters =
                 enabledLists.filter { it.category == FilterList.CATEGORY_SECURITY }
             var secCount = 0
@@ -427,21 +501,108 @@ class FilterListRepository(
                     secTrieBuilder.saveToBinary(secTrieFile)
                 }
                 secTrieBuilder.clear()
+            } else {
+                secTrieFile.delete()
             }
 
-            // ── Phase 3: Mmap the binary files (near-zero heap) ──────
             adTrie = if (adCount > 0) DomainTrie.loadFromMmap(adTrieFile) else null
             securityTrie =
                 if (secCount > 0) DomainTrie.loadFromMmap(secTrieFile) else null
 
-            val elapsed = System.currentTimeMillis() - startTime
-            Timber.d("Loaded $adCount ad + $secCount security domains in ${elapsed}ms (Trie + mmap)")
-
+            saveFingerprintAndLog(fingerprintFile, currentFingerprint, startTime, "FULL REBUILD")
             Result.success(adCount + secCount)
         } catch (e: Exception) {
             Timber.d("Failed to load filters: $e")
             Result.failure(e)
         }
+    }
+
+    /**
+     * Incremental add: load existing Trie from binary, parse only new filters, re-serialize.
+     * Returns the total domain count in the updated Trie.
+     */
+    private suspend fun incrementalAdd(
+        newFilters: List<FilterList>,
+        trieFile: File
+    ): Int {
+        if (newFilters.isEmpty()) return 0
+
+        // Load existing Trie from binary (if any)
+        val trieBuilder = if (trieFile.exists() && trieFile.length() > 0) {
+            DomainTrie.loadFromBinary(trieFile) ?: DomainTrie()
+        } else {
+            DomainTrie()
+        }
+
+        val existingCount = trieBuilder.size
+        Timber.d("Incremental: loaded $existingCount existing domains from binary")
+
+        // Parse only the NEW filter files
+        for (filter in newFilters) {
+            try {
+                val sizeBefore = trieBuilder.size
+                loadSingleFilterToTrie(filter, trieBuilder)
+                val loaded = trieBuilder.size - sizeBefore
+                filterListDao.updateStats(
+                    id = filter.id,
+                    count = loaded,
+                    timestamp = System.currentTimeMillis()
+                )
+                Timber.d("Incremental: added $loaded domains from ${filter.name}")
+            } catch (e: Exception) {
+                Timber.d("Failed to load filter: ${filter.name}: $e")
+            }
+        }
+
+        // Re-serialize
+        if (trieBuilder.size > 0) {
+            trieBuilder.saveToBinary(trieFile)
+        }
+        val totalCount = trieBuilder.size
+        trieBuilder.clear()
+        return totalCount
+    }
+
+    /**
+     * Build a map of filter ID → cache file lastModified timestamp.
+     */
+    private fun buildFingerprintMap(enabledLists: List<FilterList>): Map<Long, Long> {
+        return enabledLists.associate { filter ->
+            val cacheFile = getCacheFile(filter)
+            val lastMod = if (cacheFile.exists()) cacheFile.lastModified() else 0L
+            filter.id to lastMod
+        }
+    }
+
+    /**
+     * Parse a saved fingerprint string back into a map.
+     */
+    private fun parseFingerprintMap(fingerprint: String): Map<Long, Long> {
+        if (fingerprint.isBlank()) return emptyMap()
+        return fingerprint.split(";")
+            .filter { it.contains(":") }
+            .associate {
+                val (id, ts) = it.split(":", limit = 2)
+                id.toLongOrNull()?.let { idL -> idL to (ts.toLongOrNull() ?: 0L) }
+                    ?: (0L to 0L)
+            }
+            .filterKeys { it != 0L }
+    }
+
+    private fun saveFingerprintAndLog(
+        fingerprintFile: File,
+        fingerprint: String,
+        startTime: Long,
+        strategy: String
+    ) {
+        try {
+            fingerprintFile.writeText(fingerprint)
+        } catch (e: Exception) {
+            Timber.d("Failed to save trie fingerprint: $e")
+        }
+        val elapsed = System.currentTimeMillis() - startTime
+        val totalCount = (adTrie?.size ?: 0) + (securityTrie?.size ?: 0)
+        Timber.d("$strategy — $totalCount domains loaded in ${elapsed}ms")
     }
 
     /**

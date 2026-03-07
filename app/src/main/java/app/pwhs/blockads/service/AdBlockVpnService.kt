@@ -31,7 +31,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -46,6 +48,22 @@ import java.util.Locale
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
+
+/**
+ * Holds all preference values read in parallel during VPN startup.
+ * Uses data class for destructuring support.
+ */
+private data class PrefsSnapshot(
+    val upstreamDns: String,
+    val fallbackDns: String,
+    val dnsResponseType: String,
+    val dnsProtocol: DnsProtocol,
+    val dohUrl: String,
+    val whitelistedApps: Set<String>,
+    val safeSearchEnabled: Boolean,
+    val youtubeRestrictedMode: Boolean,
+    val firewallEnabled: Boolean,
+)
 
 class AdBlockVpnService : VpnService() {
 
@@ -134,6 +152,18 @@ class AdBlockVpnService : VpnService() {
     @Volatile
     private var isReconnecting = false
 
+    /** Current connecting phase for progress notification */
+    @Volatile
+    var connectingPhase: String = ""
+        private set
+
+    /**
+     * Lazily populated SafeSearch IP cache.
+     * Populated on-demand when the first matching DNS query is received,
+     * instead of blocking VPN startup.
+     */
+    private val safeSearchIpCache = ConcurrentHashMap<String, ByteArray>()
+
     override fun onCreate() {
         super.onCreate()
         val koin = org.koin.java.KoinJavaComponent.getKoin()
@@ -142,6 +172,7 @@ class AdBlockVpnService : VpnService() {
         dnsLogDao = koin.get()
         dnsErrorDao = koin.get()
         dohClient = koin.get()
+        dohClient.setVpnService(this) // Protect DoH sockets from VPN routing loop
         dotClient = koin.get()
         doqClient = koin.get()
         firewallRuleDao = koin.get()
@@ -230,23 +261,45 @@ class AdBlockVpnService : VpnService() {
 
         serviceScope.launch {
             try {
-                // Seed defaults and load all enabled filter lists
+                val startupTime = System.currentTimeMillis()
+
+                // ── Phase 1: Load filters ──
+                // Always call loadAllEnabledFilters() — the fingerprint cache inside
+                // FilterListRepository handles the fast path (~50ms mmap if unchanged,
+                // full rebuild only when enabled filters or cache files change).
+                connectingPhase = getString(R.string.vpn_phase_loading_filters)
+                updateNotification()
+
                 filterRepo.seedDefaultsIfNeeded()
+                val result = filterRepo.loadAllEnabledFilters()
+                Timber.d("Filters loaded: ${result.getOrDefault(0)} domains")
+                // Always reload whitelist + custom rules (fast, small sets)
                 filterRepo.loadWhitelist()
                 filterRepo.loadCustomRules()
-                val result = filterRepo.loadAllEnabledFilters()
-                Timber.d("Filters loaded: ${result.getOrDefault(0)} unique domains")
 
-                // Get upstream DNS, fallback DNS, DNS response type, and whitelisted apps
-                val upstreamDns = appPrefs.upstreamDns.first()
-                val fallbackDns = appPrefs.fallbackDns.first()
-                val dnsResponseType = appPrefs.dnsResponseType.first()
-                val dnsProtocol = appPrefs.dnsProtocol.first()
-                val dohUrl = appPrefs.dohUrl.first()
-                val whitelistedApps = appPrefs.getWhitelistedAppsSnapshot()
-                val safeSearchEnabled = appPrefs.safeSearchEnabled.first()
-                val youtubeRestrictedMode = appPrefs.youtubeRestrictedMode.first()
-                val firewallEnabled = appPrefs.firewallEnabled.first()
+                // ── Phase 2: Read all preferences in parallel ──
+                connectingPhase = getString(R.string.vpn_phase_preparing_dns)
+                updateNotification()
+
+                val (
+                    upstreamDns, fallbackDns, dnsResponseType, dnsProtocol,
+                    dohUrl, whitelistedApps, safeSearchEnabled,
+                    youtubeRestrictedMode, firewallEnabled
+                ) = coroutineScope {
+                    val d1 = async { appPrefs.upstreamDns.first() }
+                    val d2 = async { appPrefs.fallbackDns.first() }
+                    val d3 = async { appPrefs.dnsResponseType.first() }
+                    val d4 = async { appPrefs.dnsProtocol.first() }
+                    val d5 = async { appPrefs.dohUrl.first() }
+                    val d6 = async { appPrefs.getWhitelistedAppsSnapshot() }
+                    val d7 = async { appPrefs.safeSearchEnabled.first() }
+                    val d8 = async { appPrefs.youtubeRestrictedMode.first() }
+                    val d9 = async { appPrefs.firewallEnabled.first() }
+                    PrefsSnapshot(
+                        d1.await(), d2.await(), d3.await(), d4.await(),
+                        d5.await(), d6.await(), d7.await(), d8.await(), d9.await()
+                    )
+                }
 
                 // Load firewall rules if enabled
                 if (firewallEnabled) {
@@ -259,8 +312,6 @@ class AdBlockVpnService : VpnService() {
                 }
 
                 // Periodically refresh firewall rules and enabled state while the VPN coroutine is running.
-                // This ensures that changes made via the UI (add/update/delete rules or toggling the
-                // firewall preference) take effect without requiring a VPN restart.
                 launch {
                     var lastEnabled = firewallEnabled
                     while (true) {
@@ -268,7 +319,6 @@ class AdBlockVpnService : VpnService() {
                             val currentEnabled = appPrefs.firewallEnabled.first()
 
                             if (currentEnabled) {
-                                // If firewall has just been enabled or manager is missing, (re)create and load rules.
                                 if (!lastEnabled || firewallManager == null) {
                                     val fwManager =
                                         FirewallManager(this@AdBlockVpnService, firewallRuleDao)
@@ -276,7 +326,6 @@ class AdBlockVpnService : VpnService() {
                                     firewallManager = fwManager
                                     Timber.d("Firewall enabled or re-enabled, rules loaded")
                                 } else {
-                                    // Firewall remains enabled: reload rules to pick up rule changes.
                                     try {
                                         firewallManager?.loadRules()
                                         Timber.d("Firewall rules reloaded")
@@ -285,32 +334,27 @@ class AdBlockVpnService : VpnService() {
                                     }
                                 }
                             } else if (lastEnabled) {
-                                // Firewall has just been disabled via preference change.
                                 firewallManager = null
                                 Timber.d("Firewall disabled via preference change")
                             }
 
                             lastEnabled = currentEnabled
                         } catch (e: Exception) {
-                            // Log and continue; do not cancel the whole VPN coroutine due to a transient error.
                             Timber.e(e, "Error while monitoring firewall preference")
                         }
 
-                        // Poll at a modest interval to balance responsiveness and resource usage.
                         delay(5_000)
                     }
                 }
-                // Resolve SafeSearch IPs if enabled
-                val safeSearchIpCache = mutableMapOf<String, ByteArray>()
-                if (safeSearchEnabled) {
-                    resolveSafeSearchIps(upstreamDns, safeSearchIpCache)
-                }
-                // Resolve YouTube Restricted Mode IP if enabled (and not already resolved by SafeSearch)
-                if (youtubeRestrictedMode && SafeSearchManager.YOUTUBE_RESTRICT_DOMAIN !in safeSearchIpCache) {
-                    resolveYoutubeRestrictIp(upstreamDns, safeSearchIpCache)
-                }
 
-                // Try to establish VPN with retry logic
+                // SafeSearch IPs are resolved lazily on first matching DNS query
+                // (removed from startup to eliminate 1-15s blocking)
+                safeSearchIpCache.clear()
+
+                // ── Phase 3: Establish VPN tunnel ──
+                connectingPhase = getString(R.string.vpn_phase_establishing)
+                updateNotification()
+
                 var vpnEstablished = false
                 while (!vpnEstablished && retryManager.shouldRetry()) {
                     vpnEstablished = establishVpn(whitelistedApps)
@@ -327,6 +371,7 @@ class AdBlockVpnService : VpnService() {
                     Timber
                         .e("Failed to establish VPN after ${retryManager.getMaxRetries()} attempts")
                     isConnecting = false
+                    connectingPhase = ""
                     stopVpn()
                     return@launch
                 }
@@ -334,12 +379,16 @@ class AdBlockVpnService : VpnService() {
                 // VPN established successfully - reset retry counter
                 retryManager.reset()
                 isConnecting = false
+                connectingPhase = ""
                 isRunning = true
                 appPrefs.setVpnEnabled(true)
                 totalQueries.set(0)
                 blockedQueries.set(0)
                 vpnStartTime = System.currentTimeMillis()
                 startTimestamp = vpnStartTime
+
+                val startupElapsed = System.currentTimeMillis() - startupTime
+                Timber.d("VPN startup completed in ${startupElapsed}ms")
 
                 // Initialize cached all-time blocked count for milestone checks
                 val cachedTotal = dnsLogDao.getBlockedCountSync().toLong()
@@ -436,7 +485,7 @@ class AdBlockVpnService : VpnService() {
         dohUrl: String,
         safeSearchEnabled: Boolean,
         youtubeRestrictedMode: Boolean,
-        safeSearchIpCache: Map<String, ByteArray>
+        safeSearchIpCache: ConcurrentHashMap<String, ByteArray>
     ) {
         isProcessing = true
         val fd = vpnInterface?.fileDescriptor ?: return
@@ -519,7 +568,7 @@ class AdBlockVpnService : VpnService() {
         dohUrl: String,
         safeSearchEnabled: Boolean,
         youtubeRestrictedMode: Boolean,
-        safeSearchIpCache: Map<String, ByteArray>
+        safeSearchIpCache: ConcurrentHashMap<String, ByteArray>
     ) {
         val domain = query.domain.lowercase()
         val startTime = System.currentTimeMillis()
@@ -568,13 +617,24 @@ class AdBlockVpnService : VpnService() {
         }
 
         // SafeSearch enforcement: redirect supported search engines (only for A/AAAA queries)
+        // IPs are resolved lazily on first match to avoid blocking VPN startup.
         if (safeSearchEnabled && (query.queryType == 1 || query.queryType == 28)) {
             val result = SafeSearchManager.check(domain)
             when (result.action) {
                 SafeSearchManager.SafeSearchResult.Action.REDIRECT -> {
                     val redirectDomain = result.redirectDomain
                     if (redirectDomain != null) {
+                        // Lazy resolve: if not yet cached, resolve now and cache for future queries
                         val cachedIp = safeSearchIpCache[redirectDomain]
+                            ?: try {
+                                resolveARecordViaUdp(upstreamDns, redirectDomain)?.also { ip ->
+                                    safeSearchIpCache[redirectDomain] = ip
+                                    Timber.d("Lazy-resolved SafeSearch: $redirectDomain → ${formatIp(ip)}")
+                                }
+                            } catch (e: Exception) {
+                                Timber.w("Failed to lazy-resolve SafeSearch $redirectDomain: $e")
+                                null
+                            }
                         if (cachedIp != null) {
                             val response = DnsPacketParser.buildRedirectResponse(query, cachedIp)
                             writeToTun(outputStream, outputLock, response, "SafeSearch redirect")
@@ -602,11 +662,22 @@ class AdBlockVpnService : VpnService() {
         }
 
         // YouTube Restricted Mode: redirect YouTube domains to restrict.youtube.com (only for A/AAAA queries)
+        // Lazy resolve: resolve restrict.youtube.com IP on first matching query.
         if (youtubeRestrictedMode && (query.queryType == 1 || query.queryType == 28) && SafeSearchManager.isYoutubeDomain(
                 domain
             )
         ) {
-            val cachedIp = safeSearchIpCache[SafeSearchManager.YOUTUBE_RESTRICT_DOMAIN]
+            val ytDomain = SafeSearchManager.YOUTUBE_RESTRICT_DOMAIN
+            val cachedIp = safeSearchIpCache[ytDomain]
+                ?: try {
+                    resolveARecordViaUdp(upstreamDns, ytDomain)?.also { ip ->
+                        safeSearchIpCache[ytDomain] = ip
+                        Timber.d("Lazy-resolved YouTube restrict: $ytDomain → ${formatIp(ip)}")
+                    }
+                } catch (e: Exception) {
+                    Timber.w("Failed to lazy-resolve $ytDomain: $e")
+                    null
+                }
             if (cachedIp != null) {
                 val response = DnsPacketParser.buildRedirectResponse(query, cachedIp)
                 writeToTun(outputStream, outputLock, response, "YouTube restricted redirect")
@@ -627,7 +698,7 @@ class AdBlockVpnService : VpnService() {
                 totalQueries.incrementAndGet()
                 return
             }
-            // If no cached IP, fall through to normal resolution
+            // If resolution failed, fall through to normal resolution
         }
 
         if (filterRepo.isBlocked(domain)) {
@@ -1140,6 +1211,9 @@ class AdBlockVpnService : VpnService() {
         // Stop notification updates
         stopNotificationUpdates()
 
+        // Release VPN service reference from DoH client
+        dohClient.setVpnService(null)
+
         serviceScope.cancel()
         try {
             vpnInterface?.close()
@@ -1341,6 +1415,7 @@ class AdBlockVpnService : VpnService() {
         val title = when {
             isReconnecting -> getString(R.string.vpn_notification_reconnecting)
             retryManager.getRetryCount() > 0 -> getString(R.string.vpn_notification_retrying)
+            isConnecting && connectingPhase.isNotEmpty() -> getString(R.string.status_connecting)
             else -> getString(R.string.vpn_notification_title)
         }
 
@@ -1351,6 +1426,8 @@ class AdBlockVpnService : VpnService() {
                 retryManager.getRetryCount(),
                 retryManager.getMaxRetries()
             )
+
+            isConnecting && connectingPhase.isNotEmpty() -> connectingPhase
 
             isRunning -> {
                 val uptimeStr = formatUptime(System.currentTimeMillis() - vpnStartTime)

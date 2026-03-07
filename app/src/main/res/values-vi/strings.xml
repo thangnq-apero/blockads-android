@@ -414,6 +414,9 @@
     <string name="vpn_notification_stats_today">Đã chặn %1$d quảng cáo hôm nay | Uptime %2$s</string>
     <string name="vpn_notification_action_pause">Tạm dừng 1h</string>
     <string name="vpn_notification_action_stop">Dừng</string>
+    <string name="vpn_phase_loading_filters">Đang tải bộ lọc…</string>
+    <string name="vpn_phase_preparing_dns">Đang chuẩn bị DNS…</string>
+    <string name="vpn_phase_establishing">Đang thiết lập kết nối VPN…</string>
     <string name="vpn_paused_title">BlockAds đã tạm dừng</string>
     <string name="vpn_paused_text">Chặn quảng cáo tạm dừng 1 giờ. Sẽ tự động tiếp tục.</string>
     <string name="daily_summary_channel_name">Tóm tắt hàng ngày</string>

@@ -45,6 +45,12 @@ class VpnRetryManager(
      * Calculate and wait for the exponential backoff delay before next retry.
      * Returns true if waiting completed successfully, false if interrupted.
      */
+    /**
+     * Gentle Fibonacci-like delays: 1s, 1s, 2s, 3s, 5s
+     * Total worst-case wait = 12s (vs 31s with exponential backoff).
+     */
+    private val delaySteps = longArrayOf(1000L, 1000L, 2000L, 3000L, 5000L)
+
     suspend fun waitForRetry(): Boolean {
         if (!shouldRetry()) {
             Timber.w("Max retries ($maxRetries) reached")
@@ -54,9 +60,9 @@ class VpnRetryManager(
         retryCount++
         lastAttemptTime = System.currentTimeMillis()
 
-        // Calculate exponential backoff: 1s, 2s, 4s, 8s, 16s, capped at maxDelayMs
+        // Use gentle backoff curve instead of exponential
         val delayMs = minOf(
-            initialDelayMs * (1L shl (retryCount - 1)),
+            delaySteps.getOrElse(retryCount - 1) { delaySteps.last() },
             maxDelayMs
         )
 

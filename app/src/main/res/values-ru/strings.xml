@@ -414,6 +414,9 @@
     <string name="vpn_notification_stats_today">Сегодня заблокировано %1$d реклам | Время работы %2$s</string>
     <string name="vpn_notification_action_pause">Пауза на 1ч</string>
     <string name="vpn_notification_action_stop">Остановить</string>
+    <string name="vpn_phase_loading_filters">Загрузка фильтров…</string>
+    <string name="vpn_phase_preparing_dns">Подготовка DNS…</string>
+    <string name="vpn_phase_establishing">Установка VPN-соединения…</string>
     <string name="vpn_paused_title">BlockAds приостановлен</string>
     <string name="vpn_paused_text">Блокировка рекламы приостановлена на 1 час. Автоматически возобновится.</string>
     <string name="daily_summary_channel_name">Ежедневная сводка</string>
