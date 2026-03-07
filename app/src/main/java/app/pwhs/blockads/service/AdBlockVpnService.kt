@@ -26,6 +26,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import app.pwhs.blockads.data.dao.DnsLogDao
 import app.pwhs.blockads.data.entities.DnsProtocol
+import app.pwhs.blockads.data.entities.DnsProviders
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -440,9 +441,22 @@ class AdBlockVpnService : VpnService() {
         val inputStream = FileInputStream(fd)
         val outputStream = FileOutputStream(fd)
 
-        // Reusable buffer for packet reading - SAFE because processing is single-threaded
-        // The inputStream.read() call blocks until a packet arrives, ensuring sequential
-        // processing. Each packet is fully processed before the next read() call.
+        // Lock for synchronized writes to TUN output stream.
+        // With concurrent query processing, multiple coroutines may write
+        // responses simultaneously — this prevents interleaving/corruption.
+        val outputLock = Any()
+
+        // Dispatcher for concurrent DNS query processing.
+        // limitedParallelism prevents overwhelming the system while allowing
+        // multiple queries to resolve in parallel (vs. the old sequential approach
+        // where one slow query would block all subsequent queries).
+        @Suppress("OPT_IN_USAGE")
+        val queryDispatcher = Dispatchers.IO.limitedParallelism(8)
+
+        // Reusable buffer for packet reading - SAFE because parseIpPacket() extracts
+        // all needed data (rawDnsPayload, IPs, ports) into independent copies via
+        // System.arraycopy/ByteArray allocation before returning the DnsQuery object.
+        // The next read() call won't modify DnsQuery data being processed in coroutines.
         val buffer = ByteArray(MAX_PACKET_SIZE)
 
         try {
@@ -450,23 +464,28 @@ class AdBlockVpnService : VpnService() {
                 val length = inputStream.read(buffer)
                 if (length <= 0) continue
 
-                // Parse DNS query directly from the reusable buffer
-                // No need to copy since parseIpPacket doesn't modify the buffer
+                // Parse DNS query — extracts all data into independent DnsQuery object
                 val query = DnsPacketParser.parseIpPacket(buffer, length)
 
                 if (query != null) {
-                    handleDnsQuery(
-                        query,
-                        outputStream,
-                        upstreamDns,
-                        fallbackDns,
-                        dnsResponseType,
-                        dnsProtocol,
-                        dohUrl,
-                        safeSearchEnabled,
-                        youtubeRestrictedMode,
-                        safeSearchIpCache
-                    )
+                    // Dispatch each DNS query concurrently to avoid head-of-line blocking.
+                    // Previously, one slow DNS query (up to 5s timeout) would block ALL
+                    // subsequent queries, making other websites inaccessible.
+                    serviceScope.launch(queryDispatcher) {
+                        handleDnsQuery(
+                            query,
+                            outputStream,
+                            outputLock,
+                            upstreamDns,
+                            fallbackDns,
+                            dnsResponseType,
+                            dnsProtocol,
+                            dohUrl,
+                            safeSearchEnabled,
+                            youtubeRestrictedMode,
+                            safeSearchIpCache
+                        )
+                    }
                 }
                 // Non-DNS packets are silently dropped (they'll go through the normal
                 // network stack since we only handle DNS via VPN routing)
@@ -490,6 +509,7 @@ class AdBlockVpnService : VpnService() {
     private fun handleDnsQuery(
         query: DnsPacketParser.DnsQuery,
         outputStream: FileOutputStream,
+        outputLock: Any,
         upstreamDns: String,
         fallbackDns: String,
         dnsResponseType: String,
@@ -527,12 +547,7 @@ class AdBlockVpnService : VpnService() {
             val appPackage = identity.packageName
             if (fwManager.shouldBlock(appPackage)) {
                 val response = DnsPacketParser.buildRefusedResponse(query)
-                try {
-                    outputStream.write(response)
-                    outputStream.flush()
-                } catch (e: Exception) {
-                    Timber.e(e, "Error writing firewall blocked response")
-                }
+                writeToTun(outputStream, outputLock, response, "firewall blocked")
                 val elapsed = System.currentTimeMillis() - startTime
                 logDnsQuery(
                     domain,
@@ -560,12 +575,7 @@ class AdBlockVpnService : VpnService() {
                         val cachedIp = safeSearchIpCache[redirectDomain]
                         if (cachedIp != null) {
                             val response = DnsPacketParser.buildRedirectResponse(query, cachedIp)
-                            try {
-                                outputStream.write(response)
-                                outputStream.flush()
-                            } catch (e: Exception) {
-                                Timber.e(e, "Error writing SafeSearch redirect response")
-                            }
+                            writeToTun(outputStream, outputLock, response, "SafeSearch redirect")
                             val elapsed = System.currentTimeMillis() - startTime
                             logDnsQuery(
                                 domain,
@@ -597,12 +607,7 @@ class AdBlockVpnService : VpnService() {
             val cachedIp = safeSearchIpCache[SafeSearchManager.YOUTUBE_RESTRICT_DOMAIN]
             if (cachedIp != null) {
                 val response = DnsPacketParser.buildRedirectResponse(query, cachedIp)
-                try {
-                    outputStream.write(response)
-                    outputStream.flush()
-                } catch (e: Exception) {
-                    Timber.e(e, "Error writing YouTube restricted redirect response")
-                }
+                writeToTun(outputStream, outputLock, response, "YouTube restricted redirect")
                 val elapsed = System.currentTimeMillis() - startTime
                 logDnsQuery(
                     domain,
@@ -636,12 +641,7 @@ class AdBlockVpnService : VpnService() {
                 else -> // DNS_RESPONSE_CUSTOM_IP (0.0.0.0)
                     DnsPacketParser.buildBlockedResponse(query)
             }
-            try {
-                outputStream.write(response)
-                outputStream.flush()
-            } catch (e: Exception) {
-                Timber.e(e, "Error writing blocked response")
-            }
+            writeToTun(outputStream, outputLock, response, "blocked")
 
             val elapsed = System.currentTimeMillis() - startTime
             logDnsQuery(domain, true, query.queryType, elapsed, appName, blockedBy = blockedBy)
@@ -671,7 +671,7 @@ class AdBlockVpnService : VpnService() {
             }
         } else {
             // Forward to upstream DNS
-            forwardDnsQuery(query, outputStream, upstreamDns, fallbackDns, dnsProtocol, dohUrl)
+            forwardDnsQuery(query, outputStream, outputLock, upstreamDns, fallbackDns, dnsProtocol, dohUrl)
 
             val elapsed = System.currentTimeMillis() - startTime
             logDnsQuery(domain, false, query.queryType, elapsed, appName)
@@ -682,6 +682,7 @@ class AdBlockVpnService : VpnService() {
     private fun forwardDnsQuery(
         query: DnsPacketParser.DnsQuery,
         outputStream: FileOutputStream,
+        outputLock: Any,
         upstreamDns: String,
         fallbackDns: String,
         dnsProtocol: DnsProtocol,
@@ -689,7 +690,7 @@ class AdBlockVpnService : VpnService() {
     ) {
 
         // Try primary DNS server first
-        var success = tryDnsQuery(query, outputStream, upstreamDns, dohUrl, dnsProtocol, false)
+        var success = tryDnsQuery(query, outputStream, outputLock, upstreamDns, dohUrl, dnsProtocol, false)
 
         // If primary fails and fallback is different, try fallback (with PLAIN protocol as fallback)
         if (!success && fallbackDns != upstreamDns) {
@@ -698,6 +699,7 @@ class AdBlockVpnService : VpnService() {
             success = tryDnsQuery(
                 query,
                 outputStream,
+                outputLock,
                 fallbackDns,
                 dohUrl,
                 DnsProtocol.PLAIN,
@@ -709,19 +711,15 @@ class AdBlockVpnService : VpnService() {
         if (!success) {
             Timber
                 .e("Both primary and fallback DNS failed for ${query.domain}, returning SERVFAIL")
-            try {
-                val servfailResponse = DnsPacketParser.buildServfailResponse(query)
-                outputStream.write(servfailResponse)
-                outputStream.flush()
-            } catch (e: Exception) {
-                Timber.e(e, "Error writing SERVFAIL response")
-            }
+            val servfailResponse = DnsPacketParser.buildServfailResponse(query)
+            writeToTun(outputStream, outputLock, servfailResponse, "SERVFAIL")
         }
     }
 
     private fun tryDnsQuery(
         query: DnsPacketParser.DnsQuery,
         outputStream: FileOutputStream,
+        outputLock: Any,
         dnsServer: String,
         dohUrl: String,
         protocol: DnsProtocol,
@@ -770,8 +768,7 @@ class AdBlockVpnService : VpnService() {
                 payload = dnsResponseData
             )
 
-            outputStream.write(fullResponse)
-            outputStream.flush()
+            writeToTun(outputStream, outputLock, fullResponse, "DNS response")
             return true
 
         } catch (e: java.net.SocketTimeoutException) {
@@ -835,6 +832,27 @@ class AdBlockVpnService : VpnService() {
             return null
         } finally {
             socket?.close()
+        }
+    }
+
+    /**
+     * Thread-safe write to the TUN output stream.
+     * With concurrent DNS query processing, multiple coroutines may produce responses
+     * simultaneously. This method ensures writes are atomic and prevents interleaving.
+     */
+    private fun writeToTun(
+        outputStream: FileOutputStream,
+        outputLock: Any,
+        data: ByteArray,
+        label: String
+    ) {
+        try {
+            synchronized(outputLock) {
+                outputStream.write(data)
+                outputStream.flush()
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Error writing $label response to TUN")
         }
     }
 
