@@ -170,13 +170,6 @@
     <string name="settings_theme_light">Chiaro</string>
     <string name="settings_theme_dark">Scuro</string>
     <string name="settings_lang_system">Sistema</string>
-    <string name="settings_lang_en">Inglese</string>
-    <string name="settings_lang_vi">Vietnamita</string>
-    <string name="settings_lang_ja">Giapponese</string>
-    <string name="settings_lang_ko">Coreano</string>
-    <string name="settings_lang_zh">Cinese</string>
-    <string name="settings_lang_th">Thai</string>
-    <string name="settings_lang_es">Spagnolo</string>
     <string name="settings_high_contrast">Alto Contrasto</string>
     <string name="settings_high_contrast_desc">Aumenta il contrasto per una migliore visibilità</string>
     <string name="settings_accent_color">Colore Accento</string>

@@ -140,13 +140,6 @@
     <string name="settings_theme_light">สว่าง</string>
     <string name="settings_theme_dark">มืด</string>
     <string name="settings_lang_system">ระบบ</string>
-    <string name="settings_lang_en">English</string>
-    <string name="settings_lang_vi">Tiếng Việt</string>
-    <string name="settings_lang_ja">日本語</string>
-    <string name="settings_lang_ko">한국어</string>
-    <string name="settings_lang_zh">中文</string>
-    <string name="settings_lang_th">ไทย</string>
-    <string name="settings_lang_es">Español</string>
     <string name="settings_high_contrast">คอนทราสต์สูง</string>
     <string name="settings_high_contrast_desc">เพิ่มคอนทราสต์เพื่อการมองเห็นที่ดีขึ้น</string>
     <string name="settings_accent_color">สีเน้น</string>

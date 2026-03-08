@@ -140,13 +140,6 @@
     <string name="settings_theme_light">ライト</string>
     <string name="settings_theme_dark">ダーク</string>
     <string name="settings_lang_system">システム</string>
-    <string name="settings_lang_en">English</string>
-    <string name="settings_lang_vi">Tiếng Việt</string>
-    <string name="settings_lang_ja">日本語</string>
-    <string name="settings_lang_ko">한국어</string>
-    <string name="settings_lang_zh">中文</string>
-    <string name="settings_lang_th">ไทย</string>
-    <string name="settings_lang_es">Español</string>
     <string name="settings_high_contrast">ハイコントラスト</string>
     <string name="settings_high_contrast_desc">視認性を向上させるためにコントラストを高めます</string>
     <string name="settings_accent_color">アクセントカラー</string>

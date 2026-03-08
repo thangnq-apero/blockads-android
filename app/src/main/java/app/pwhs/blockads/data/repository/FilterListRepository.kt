@@ -18,6 +18,9 @@ import java.io.BufferedReader
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 class FilterListRepository(
     private val context: Context,
@@ -203,7 +206,10 @@ class FilterListRepository(
 
     private val trieDir get() = File(context.filesDir, "trie_cache")
 
-    val domainCount: Int get() = adTrie?.size ?: 0
+    private val _domainCountFlow = MutableStateFlow(0)
+    val domainCountFlow: StateFlow<Int> = _domainCountFlow.asStateFlow()
+
+    val domainCount: Int get() = _domainCountFlow.value
 
     /**
      * Check if a domain or any of its parent domains matches a condition.
@@ -397,6 +403,7 @@ class FilterListRepository(
 
                     val elapsed = System.currentTimeMillis() - startTime
                     val totalCount = (adTrie?.size ?: 0) + (securityTrie?.size ?: 0)
+                    _domainCountFlow.value = totalCount
                     Timber.d("Trie cache HIT — loaded $totalCount domains via mmap in ${elapsed}ms")
                     return@withContext Result.success(totalCount)
                 }
@@ -444,9 +451,10 @@ class FilterListRepository(
                         startTime,
                         "INCREMENTAL"
                     )
-                    return@withContext Result.success(
-                        (adTrie?.size ?: 0) + (securityTrie?.size ?: 0)
-                    )
+                    val totalCount = (adTrie?.size ?: 0) + (securityTrie?.size ?: 0)
+                    _domainCountFlow.value = totalCount
+
+                    return@withContext Result.success(totalCount)
                 }
 
                 // ── Strategy 3: Full REBUILD ──
@@ -524,7 +532,9 @@ class FilterListRepository(
                     startTime,
                     "FULL REBUILD"
                 )
-                Result.success(adCount + secCount)
+                val finalCount = adCount + secCount
+                _domainCountFlow.value = finalCount
+                Result.success(finalCount)
             } catch (e: Exception) {
                 Timber.d("Failed to load filters: $e")
                 Result.failure(e)

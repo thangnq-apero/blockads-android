@@ -170,13 +170,16 @@
     <string name="settings_theme_light">Light</string>
     <string name="settings_theme_dark">Dark</string>
     <string name="settings_lang_system">System</string>
-    <string name="settings_lang_en">English</string>
-    <string name="settings_lang_vi">Tiếng Việt</string>
-    <string name="settings_lang_ja">日本語</string>
-    <string name="settings_lang_ko">한국어</string>
-    <string name="settings_lang_zh">中文</string>
-    <string name="settings_lang_th">ไทย</string>
-    <string name="settings_lang_es">Español</string>
+    <string name="settings_lang_en" translatable="false">English</string>
+    <string name="settings_lang_vi" translatable="false">Tiếng Việt</string>
+    <string name="settings_lang_ja" translatable="false">日本語</string>
+    <string name="settings_lang_ko" translatable="false">한국어</string>
+    <string name="settings_lang_zh" translatable="false">中文</string>
+    <string name="settings_lang_th" translatable="false">ไทย</string>
+    <string name="settings_lang_es" translatable="false">Español</string>
+    <string name="settings_lang_ru" translatable="false">Русский</string>
+    <string name="settings_lang_it" translatable="false">Italiano</string>
+    <string name="settings_lang_ar" translatable="false">العربية</string>
     <string name="settings_high_contrast">High Contrast</string>
     <string name="settings_high_contrast_desc">Increase contrast for better visibility</string>
     <string name="settings_accent_color">Accent Color</string>

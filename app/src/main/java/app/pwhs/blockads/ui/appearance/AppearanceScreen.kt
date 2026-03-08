@@ -311,6 +311,9 @@ fun AppearanceScreen(
                         Triple(R.string.settings_lang_zh, Icons.Default.Language, AppPreferences.LANGUAGE_ZH),
                         Triple(R.string.settings_lang_th, Icons.Default.Language, AppPreferences.LANGUAGE_TH),
                         Triple(R.string.settings_lang_es, Icons.Default.Language, AppPreferences.LANGUAGE_ES),
+                        Triple(R.string.settings_lang_ru, Icons.Default.Language, AppPreferences.LANGUAGE_RU),
+                        Triple(R.string.settings_lang_it, Icons.Default.Language, AppPreferences.LANGUAGE_IT),
+                        Triple(R.string.settings_lang_ar, Icons.Default.Language, AppPreferences.LANGUAGE_AR),
                     )
                     languages.forEachIndexed { index, (labelRes, icon, langCode) ->
                         Row(

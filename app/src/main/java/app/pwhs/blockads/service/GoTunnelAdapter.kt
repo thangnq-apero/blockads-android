@@ -4,11 +4,13 @@ import android.os.ParcelFileDescriptor
 import app.pwhs.blockads.data.dao.DnsLogDao
 import app.pwhs.blockads.data.entities.DnsLogEntry
 import app.pwhs.blockads.data.repository.FilterListRepository
+import app.pwhs.blockads.util.AppNameResolver
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import tunnel.DomainChecker
+import tunnel.FirewallChecker
 import tunnel.LogCallback
 import tunnel.SocketProtector
 
@@ -18,6 +20,7 @@ import tunnel.SocketProtector
  * Responsibilities:
  * - Pass TUN file descriptor to Go engine
  * - Implement [DomainChecker] so Go calls Kotlin's mmap'd Trie for blocking decisions
+ * - Implement [FirewallChecker] so Go calls Kotlin's FirewallManager for per-app blocking
  * - Implement [SocketProtector] so Go can protect sockets from VPN routing loop
  * - Receive DNS log events from Go and write to Room DB
  */
@@ -26,6 +29,12 @@ class GoTunnelAdapter(
     private val filterRepo: FilterListRepository,
     private val dnsLogDao: DnsLogDao,
     private val scope: CoroutineScope,
+    private val appNameResolver: AppNameResolver,
+    /**
+     * Returns the current [FirewallManager] if firewall is enabled, or null if disabled.
+     * This is a lambda so it always reads the latest value from [AdBlockVpnService].
+     */
+    private val firewallManagerProvider: () -> FirewallManager?,
 ) {
     private val engine = tunnel.Tunnel.newEngine()
 
@@ -76,6 +85,36 @@ class GoTunnelAdapter(
     }
 
     /**
+     * Set up the firewall checker for per-app DNS blocking.
+     * Uses [AppNameResolver] to map source port → UID → package name,
+     * then checks [FirewallManager.shouldBlock].
+     */
+    private fun setupFirewallChecker() {
+        engine.setFirewallChecker(object : FirewallChecker {
+            override fun shouldBlock(
+                sourcePort: Long,
+                sourceIP: ByteArray,
+                destIP: ByteArray,
+                destPort: Long,
+            ): String {
+                val fwManager = firewallManagerProvider() ?: return ""
+                try {
+                    val identity = appNameResolver.resolveIdentity(
+                        sourcePort.toInt(), sourceIP, destIP, destPort.toInt()
+                    )
+                    if (identity.packageName.isEmpty()) return ""
+                    return if (fwManager.shouldBlock(identity.packageName)) {
+                        identity.appName.ifEmpty { identity.packageName }
+                    } else ""
+                } catch (e: Exception) {
+                    Timber.e(e, "Firewall check failed")
+                    return ""
+                }
+            }
+        })
+    }
+
+    /**
      * Set the DNS log callback.
      */
     private fun setupLogCallback() {
@@ -121,6 +160,7 @@ class GoTunnelAdapter(
         isRunning = true
 
         setupDomainChecker()
+        setupFirewallChecker()
         setupLogCallback()
 
         val fd = vpnInterface.fd
@@ -169,3 +209,4 @@ class GoTunnelAdapter(
         }
     }
 }
+

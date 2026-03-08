@@ -14,6 +14,7 @@ import app.pwhs.blockads.R
 import app.pwhs.blockads.data.datastore.AppPreferences
 import app.pwhs.blockads.data.repository.FilterListRepository
 import app.pwhs.blockads.data.dao.FirewallRuleDao
+import app.pwhs.blockads.util.AppNameResolver
 import app.pwhs.blockads.util.BatteryMonitor
 import app.pwhs.blockads.util.startOfDayMillis
 import app.pwhs.blockads.widget.AdBlockWidgetProvider
@@ -116,6 +117,7 @@ class AdBlockVpnService : VpnService() {
     private lateinit var notificationHelper: NotificationHelper
     private var firewallManager: FirewallManager? = null
     private lateinit var firewallRuleDao: FirewallRuleDao
+    private lateinit var appNameResolver: AppNameResolver
     private var batteryMonitoringJob: kotlinx.coroutines.Job? = null
     private var notificationUpdateJob: kotlinx.coroutines.Job? = null
 
@@ -145,7 +147,15 @@ class AdBlockVpnService : VpnService() {
         appPrefs = koin.get()
         dnsLogDao = koin.get()
         
-        goTunnelAdapter = GoTunnelAdapter(this, filterRepo, dnsLogDao, serviceScope)
+        appNameResolver = AppNameResolver(this)
+        goTunnelAdapter = GoTunnelAdapter(
+            vpnService = this,
+            filterRepo = filterRepo,
+            dnsLogDao = dnsLogDao,
+            scope = serviceScope,
+            appNameResolver = appNameResolver,
+            firewallManagerProvider = { firewallManager },
+        )
         
         firewallRuleDao = koin.get()
         batteryMonitor = BatteryMonitor(this)

@@ -71,7 +71,8 @@ class HomeViewModel(
     private val _protectionUptimeMs = MutableStateFlow(0L)
     val protectionUptimeMs: StateFlow<Long> = _protectionUptimeMs.asStateFlow()
 
-    val domainCount: Int get() = filterRepo.domainCount
+    val domainCount: StateFlow<Int> = filterRepo.domainCountFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), filterRepo.domainCount)
 
     init {
         // Start polling VPN state

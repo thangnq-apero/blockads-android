@@ -95,6 +95,7 @@ fun HomeScreen(
     val vpnEnabled by viewModel.vpnEnabled.collectAsStateWithLifecycle()
     val vpnConnecting by viewModel.vpnConnecting.collectAsStateWithLifecycle()
     val blockedCount by viewModel.blockedCount.collectAsStateWithLifecycle()
+    val domainCount by viewModel.domainCount.collectAsStateWithLifecycle()
     val totalCount by viewModel.totalCount.collectAsStateWithLifecycle()
     val securityThreatsBlocked by viewModel.securityThreatsBlocked.collectAsStateWithLifecycle()
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
@@ -354,7 +355,7 @@ fun HomeScreen(
                             color = TextSecondary
                         )
                         Text(
-                            text = formatCount(viewModel.domainCount),
+                            text = formatCount(domainCount),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary

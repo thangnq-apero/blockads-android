@@ -38,6 +38,18 @@ type DomainChecker interface {
 	GetBlockReason(domain string) string
 }
 
+// FirewallChecker checks if a DNS query from a specific app should be blocked.
+// The implementation lives in Kotlin and uses UID resolution + FirewallManager.
+type FirewallChecker interface {
+	// ShouldBlock checks if the app owning the DNS connection should be blocked.
+	// sourcePort: the source UDP port of the DNS query
+	// sourceIP: the source IP address bytes
+	// destIP: the destination IP address bytes
+	// destPort: the destination port (typically 53)
+	// Returns the app name if blocked (non-empty), or empty string if allowed.
+	ShouldBlock(sourcePort int, sourceIP []byte, destIP []byte, destPort int) string
+}
+
 // SocketProtector is the interface for protecting sockets from VPN routing loop.
 // Implemented in Kotlin via VpnService.protect().
 type SocketProtector interface {
@@ -48,9 +60,10 @@ type SocketProtector interface {
 // Engine is the main DNS tunnel engine.
 // All exported methods use gomobile-compatible types.
 type Engine struct {
-	resolver      *Resolver
-	safeSearch    *SafeSearch
-	domainChecker DomainChecker
+	resolver        *Resolver
+	safeSearch      *SafeSearch
+	domainChecker   DomainChecker
+	firewallChecker FirewallChecker
 
 	mu           sync.Mutex
 	running      bool
@@ -87,6 +100,12 @@ func NewEngine() *Engine {
 // This is called before Start() to provide the blocking logic.
 func (e *Engine) SetDomainChecker(checker DomainChecker) {
 	e.domainChecker = checker
+}
+
+// SetFirewallChecker sets the Kotlin-side firewall checker.
+// This is called before Start() to enable per-app DNS blocking.
+func (e *Engine) SetFirewallChecker(checker FirewallChecker) {
+	e.firewallChecker = checker
 }
 
 // SetLogCallback sets the callback for DNS query events.
@@ -235,6 +254,20 @@ func (e *Engine) handleDNSQuery(queryInfo *DNSQueryInfo) {
 	startTime := time.Now()
 	domain := strings.ToLower(queryInfo.Domain)
 
+	// Firewall check (per-app blocking via Kotlin callback)
+	if e.firewallChecker != nil {
+		appName := e.firewallChecker.ShouldBlock(
+			int(queryInfo.SourcePort),
+			[]byte(queryInfo.SourceIP),
+			[]byte(queryInfo.DestIP),
+			int(queryInfo.DestPort),
+		)
+		if appName != "" {
+			e.handleFirewallBlock(queryInfo, appName, startTime)
+			return
+		}
+	}
+
 	// SafeSearch check
 	ssResult := e.safeSearch.Check(domain, queryInfo.QueryType)
 	if ssResult.Action == ActionRedirect {
@@ -283,8 +316,29 @@ func (e *Engine) handleSafeSearchRedirect(queryInfo *DNSQueryInfo, redirectDomai
 	e.totalQueries.Add(1)
 
 	elapsed := time.Since(startTime).Milliseconds()
-	e.notifyLog(queryInfo.Domain, false, queryInfo.QueryType, elapsed, ip.String(), "")
+	e.notifyLog(queryInfo.Domain, false, queryInfo.QueryType, elapsed, "", ip.String(), "")
 	return true
+}
+
+// handleFirewallBlock handles a DNS query blocked by the per-app firewall.
+func (e *Engine) handleFirewallBlock(queryInfo *DNSQueryInfo, appName string, startTime time.Time) {
+	var response []byte
+	switch e.responseType {
+	case ResponseNXDomain:
+		response = BuildNXDomainResponse(queryInfo)
+	case ResponseRefused:
+		response = BuildRefusedResponse(queryInfo)
+	default:
+		response = BuildBlockedResponse(queryInfo)
+	}
+
+	e.writeToTUN(response)
+	e.totalQueries.Add(1)
+	e.blockedQueries.Add(1)
+
+	elapsed := time.Since(startTime).Milliseconds()
+	logf("BLOCKED: %s (by: firewall, app: %s)", queryInfo.Domain, appName)
+	e.notifyLog(queryInfo.Domain, true, queryInfo.QueryType, elapsed, appName, "", "firewall")
 }
 
 // handleBlockedDomain handles a blocked domain.
@@ -305,7 +359,7 @@ func (e *Engine) handleBlockedDomain(queryInfo *DNSQueryInfo, blockedBy string, 
 
 	elapsed := time.Since(startTime).Milliseconds()
 	logf("BLOCKED: %s (by: %s)", queryInfo.Domain, blockedBy)
-	e.notifyLog(queryInfo.Domain, true, queryInfo.QueryType, elapsed, "", blockedBy)
+	e.notifyLog(queryInfo.Domain, true, queryInfo.QueryType, elapsed, "", "", blockedBy)
 }
 
 // handleForward forwards a DNS query to upstream and writes the response.
@@ -318,7 +372,7 @@ func (e *Engine) handleForward(queryInfo *DNSQueryInfo, startTime time.Time) {
 		e.totalQueries.Add(1)
 
 		elapsed := time.Since(startTime).Milliseconds()
-		e.notifyLog(queryInfo.Domain, false, queryInfo.QueryType, elapsed, "", "")
+		e.notifyLog(queryInfo.Domain, false, queryInfo.QueryType, elapsed, "", "", "")
 		return
 	}
 
@@ -327,7 +381,7 @@ func (e *Engine) handleForward(queryInfo *DNSQueryInfo, startTime time.Time) {
 	e.totalQueries.Add(1)
 
 	elapsed := time.Since(startTime).Milliseconds()
-	e.notifyLog(queryInfo.Domain, false, queryInfo.QueryType, elapsed, "", "")
+	e.notifyLog(queryInfo.Domain, false, queryInfo.QueryType, elapsed, "", "", "")
 }
 
 // writeToTUN writes a packet to the TUN device.
@@ -345,9 +399,9 @@ func (e *Engine) writeToTUN(data []byte) {
 }
 
 // notifyLog sends a DNS query event to the Kotlin callback.
-func (e *Engine) notifyLog(domain string, blocked bool, queryType uint16, responseTimeMs int64, resolvedIP, blockedBy string) {
+func (e *Engine) notifyLog(domain string, blocked bool, queryType uint16, responseTimeMs int64, appName, resolvedIP, blockedBy string) {
 	if e.logCallback != nil {
-		e.logCallback.OnDNSQuery(domain, blocked, int(queryType), responseTimeMs, "", resolvedIP, blockedBy)
+		e.logCallback.OnDNSQuery(domain, blocked, int(queryType), responseTimeMs, appName, resolvedIP, blockedBy)
 	}
 }
 
