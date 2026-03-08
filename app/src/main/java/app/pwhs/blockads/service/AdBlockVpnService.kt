@@ -120,9 +120,7 @@ class AdBlockVpnService : VpnService() {
     private lateinit var appPrefs: AppPreferences
     private lateinit var dnsLogDao: DnsLogDao
     private lateinit var dnsErrorDao: DnsErrorDao
-    private lateinit var dohClient: app.pwhs.blockads.dns.DohClient
-    private lateinit var dotClient: app.pwhs.blockads.dns.DotClient
-    private lateinit var doqClient: app.pwhs.blockads.dns.DoqClient
+    private lateinit var goTunnelAdapter: GoTunnelAdapter
     private var networkMonitor: NetworkMonitor? = null
     private val retryManager =
         VpnRetryManager(maxRetries = 5, initialDelayMs = 1000L, maxDelayMs = 60000L)
@@ -177,11 +175,9 @@ class AdBlockVpnService : VpnService() {
         appPrefs = koin.get()
         dnsLogDao = koin.get()
         dnsErrorDao = koin.get()
-        dohClient = koin.get()
-        dohClient.setVpnService(this) // Protect DoH sockets from VPN routing loop
-        dotClient = koin.get()
-        doqClient = koin.get()
-        doqClient.setVpnService(this) // Protect DoQ sockets from VPN routing loop
+        
+        goTunnelAdapter = GoTunnelAdapter(this, filterRepo, dnsLogDao, serviceScope)
+        
         firewallRuleDao = koin.get()
         batteryMonitor = BatteryMonitor(this)
         appNameResolver = AppNameResolver(this)
@@ -237,7 +233,10 @@ class AdBlockVpnService : VpnService() {
         stopBatteryMonitoring()
         stopNotificationUpdates()
 
-        // Close current VPN interface (causes IOException in blocking read, ending processPackets)
+        // Stop Go tunnel engine so its running flags are reset
+        goTunnelAdapter.stop()
+
+        // Close current VPN interface
         try {
             vpnInterface?.close()
         } catch (e: Exception) {
@@ -251,10 +250,6 @@ class AdBlockVpnService : VpnService() {
         // Brief delay to let old VPN resources (file descriptors, sockets) clean up
         serviceScope.launch {
             delay(RESTART_CLEANUP_DELAY_MS)
-
-            // Clear stale connections to old DNS servers
-            dohClient.clearConnectionPool()
-            doqClient.resetConnection()
 
             isRestarting = false
             startVpn()
@@ -423,17 +418,20 @@ class AdBlockVpnService : VpnService() {
                 // Start periodic notification updates with stats
                 startNotificationUpdates()
 
-                // Start processing packets
-                processPackets(
-                    upstreamDns,
-                    fallbackDns,
-                    dnsResponseType,
-                    dnsProtocol,
-                    dohUrl,
-                    safeSearchEnabled,
-                    youtubeRestrictedMode,
-                    safeSearchIpCache
+                // Configure and start Go tunnel engine
+                goTunnelAdapter.configureDns(
+                    protocol = dnsProtocol.name,
+                    primary = upstreamDns,
+                    fallback = fallbackDns,
+                    dohUrl = dohUrl
                 )
+                goTunnelAdapter.setBlockResponseType(dnsResponseType)
+                goTunnelAdapter.configureSafeSearch(safeSearchEnabled, youtubeRestrictedMode)
+                
+                vpnInterface?.let {
+                    // start() blocks the coroutine while reading from TUN
+                    goTunnelAdapter.start(it)
+                }
 
             } catch (e: Exception) {
                 Timber.e(e, "VPN startup failed")
@@ -487,566 +485,6 @@ class AdBlockVpnService : VpnService() {
             Timber.e(e, "Error establishing VPN")
             false
         }
-    }
-
-    private fun processPackets(
-        upstreamDns: String,
-        fallbackDns: String,
-        dnsResponseType: String,
-        dnsProtocol: DnsProtocol,
-        dohUrl: String,
-        safeSearchEnabled: Boolean,
-        youtubeRestrictedMode: Boolean,
-        safeSearchIpCache: ConcurrentHashMap<String, ByteArray>
-    ) {
-        isProcessing = true
-        val fd = vpnInterface?.fileDescriptor ?: return
-        val inputStream = FileInputStream(fd)
-        val outputStream = FileOutputStream(fd)
-
-        // Lock for synchronized writes to TUN output stream.
-        // With concurrent query processing, multiple coroutines may write
-        // responses simultaneously — this prevents interleaving/corruption.
-        val outputLock = Any()
-
-        // Dispatcher for concurrent DNS query processing.
-        // limitedParallelism prevents overwhelming the system while allowing
-        // multiple queries to resolve in parallel (vs. the old sequential approach
-        // where one slow query would block all subsequent queries).
-        @Suppress("OPT_IN_USAGE")
-        val queryDispatcher = Dispatchers.IO.limitedParallelism(8)
-
-        // Reusable buffer for packet reading - SAFE because parseIpPacket() extracts
-        // all needed data (rawDnsPayload, IPs, ports) into independent copies via
-        // System.arraycopy/ByteArray allocation before returning the DnsQuery object.
-        // The next read() call won't modify DnsQuery data being processed in coroutines.
-        val buffer = ByteArray(MAX_PACKET_SIZE)
-
-        try {
-            while (isProcessing && isRunning) {
-                val length = inputStream.read(buffer)
-                if (length <= 0) continue
-
-                // Parse DNS query — extracts all data into independent DnsQuery object
-                val query = DnsPacketParser.parseIpPacket(buffer, length)
-
-                if (query != null) {
-                    // Dispatch each DNS query concurrently to avoid head-of-line blocking.
-                    // Previously, one slow DNS query (up to 5s timeout) would block ALL
-                    // subsequent queries, making other websites inaccessible.
-                    serviceScope.launch(queryDispatcher) {
-                        handleDnsQuery(
-                            query,
-                            outputStream,
-                            outputLock,
-                            upstreamDns,
-                            fallbackDns,
-                            dnsResponseType,
-                            dnsProtocol,
-                            dohUrl,
-                            safeSearchEnabled,
-                            youtubeRestrictedMode,
-                            safeSearchIpCache
-                        )
-                    }
-                }
-                // Non-DNS packets are silently dropped (they'll go through the normal
-                // network stack since we only handle DNS via VPN routing)
-            }
-        } catch (e: Exception) {
-            if (isProcessing) {
-                Timber.e(e, "Packet processing error")
-            }
-        } finally {
-            try {
-                inputStream.close()
-            } catch (_: Exception) {
-            }
-            try {
-                outputStream.close()
-            } catch (_: Exception) {
-            }
-        }
-    }
-
-    private fun handleDnsQuery(
-        query: DnsPacketParser.DnsQuery,
-        outputStream: FileOutputStream,
-        outputLock: Any,
-        upstreamDns: String,
-        fallbackDns: String,
-        dnsResponseType: String,
-        dnsProtocol: DnsProtocol,
-        dohUrl: String,
-        safeSearchEnabled: Boolean,
-        youtubeRestrictedMode: Boolean,
-        safeSearchIpCache: ConcurrentHashMap<String, ByteArray>
-    ) {
-        val domain = query.domain.lowercase()
-        val startTime = System.currentTimeMillis()
-
-        // Resolve UID once to get both app name and package name (avoids duplicate UID lookup)
-        val fwManager = firewallManager
-        val identity = if (fwManager != null) {
-            appNameResolver.resolveIdentity(
-                query.sourcePort,
-                query.sourceIp,
-                query.destIp,
-                query.destPort
-            )
-        } else {
-            null
-        }
-        val appName = identity?.appName
-            ?: appNameResolver.resolve(
-                query.sourcePort,
-                query.sourceIp,
-                query.destIp,
-                query.destPort
-            )
-
-        // Firewall: block DNS for apps with active firewall rules
-        if (fwManager != null && identity != null) {
-            val appPackage = identity.packageName
-            if (fwManager.shouldBlock(appPackage)) {
-                val response = DnsPacketParser.buildRefusedResponse(query)
-                writeToTun(outputStream, outputLock, response, "firewall blocked")
-                val elapsed = System.currentTimeMillis() - startTime
-                logDnsQuery(
-                    domain,
-                    true,
-                    query.queryType,
-                    elapsed,
-                    appName,
-                    blockedBy = FilterListRepository.BLOCK_REASON_FIREWALL
-                )
-                Timber.d("FIREWALL BLOCKED: $domain (app: $appName / $appPackage)")
-                totalQueries.incrementAndGet()
-                blockedQueries.incrementAndGet()
-                sendFirewallNotification(appName, appPackage)
-                return
-            }
-        }
-
-        // SafeSearch enforcement: redirect supported search engines (only for A/AAAA queries)
-        // IPs are resolved lazily on first match to avoid blocking VPN startup.
-        if (safeSearchEnabled && (query.queryType == 1 || query.queryType == 28)) {
-            val result = SafeSearchManager.check(domain)
-            when (result.action) {
-                SafeSearchManager.SafeSearchResult.Action.REDIRECT -> {
-                    val redirectDomain = result.redirectDomain
-                    if (redirectDomain != null) {
-                        // Lazy resolve: if not yet cached, resolve now and cache for future queries
-                        val cachedIp = safeSearchIpCache[redirectDomain]
-                            ?: try {
-                                resolveARecordViaUdp(upstreamDns, redirectDomain)?.also { ip ->
-                                    safeSearchIpCache[redirectDomain] = ip
-                                    Timber.d("Lazy-resolved SafeSearch: $redirectDomain → ${formatIp(ip)}")
-                                }
-                            } catch (e: Exception) {
-                                Timber.w("Failed to lazy-resolve SafeSearch $redirectDomain: $e")
-                                null
-                            }
-                        if (cachedIp != null) {
-                            val response = DnsPacketParser.buildRedirectResponse(query, cachedIp)
-                            writeToTun(outputStream, outputLock, response, "SafeSearch redirect")
-                            val elapsed = System.currentTimeMillis() - startTime
-                            logDnsQuery(
-                                domain,
-                                false,
-                                query.queryType,
-                                elapsed,
-                                appName,
-                                resolvedIp = formatIp(cachedIp)
-                            )
-                            Timber
-                                .d("SAFESEARCH: $domain → $redirectDomain (${formatIp(cachedIp)})")
-                            totalQueries.incrementAndGet()
-                            return
-                        }
-                    }
-                    // If no cached IP or no redirect domain, fall through to normal resolution
-                }
-
-                SafeSearchManager.SafeSearchResult.Action.NONE -> { /* proceed normally */
-                }
-            }
-        }
-
-        // YouTube Restricted Mode: redirect YouTube domains to restrict.youtube.com (only for A/AAAA queries)
-        // Lazy resolve: resolve restrict.youtube.com IP on first matching query.
-        if (youtubeRestrictedMode && (query.queryType == 1 || query.queryType == 28) && SafeSearchManager.isYoutubeDomain(
-                domain
-            )
-        ) {
-            val ytDomain = SafeSearchManager.YOUTUBE_RESTRICT_DOMAIN
-            val cachedIp = safeSearchIpCache[ytDomain]
-                ?: try {
-                    resolveARecordViaUdp(upstreamDns, ytDomain)?.also { ip ->
-                        safeSearchIpCache[ytDomain] = ip
-                        Timber.d("Lazy-resolved YouTube restrict: $ytDomain → ${formatIp(ip)}")
-                    }
-                } catch (e: Exception) {
-                    Timber.w("Failed to lazy-resolve $ytDomain: $e")
-                    null
-                }
-            if (cachedIp != null) {
-                val response = DnsPacketParser.buildRedirectResponse(query, cachedIp)
-                writeToTun(outputStream, outputLock, response, "YouTube restricted redirect")
-                val elapsed = System.currentTimeMillis() - startTime
-                logDnsQuery(
-                    domain,
-                    false,
-                    query.queryType,
-                    elapsed,
-                    appName,
-                    resolvedIp = formatIp(cachedIp)
-                )
-                Timber.d(
-                    "YOUTUBE RESTRICTED: $domain → ${SafeSearchManager.YOUTUBE_RESTRICT_DOMAIN} (${
-                        formatIp(cachedIp)
-                    })"
-                )
-                totalQueries.incrementAndGet()
-                return
-            }
-            // If resolution failed, fall through to normal resolution
-        }
-
-        if (filterRepo.isBlocked(domain)) {
-            val blockedBy = filterRepo.getBlockReason(domain)
-            // Build and write blocked response based on configured response type
-            val response = when (dnsResponseType) {
-                AppPreferences.DNS_RESPONSE_NXDOMAIN ->
-                    DnsPacketParser.buildNxdomainResponse(query)
-
-                AppPreferences.DNS_RESPONSE_REFUSED ->
-                    DnsPacketParser.buildRefusedResponse(query)
-
-                else -> // DNS_RESPONSE_CUSTOM_IP (0.0.0.0)
-                    DnsPacketParser.buildBlockedResponse(query)
-            }
-            writeToTun(outputStream, outputLock, response, "blocked")
-
-            val elapsed = System.currentTimeMillis() - startTime
-            logDnsQuery(domain, true, query.queryType, elapsed, appName, blockedBy = blockedBy)
-            Timber.d("BLOCKED: $domain (app: $appName)")
-            totalQueries.incrementAndGet()
-            blockedQueries.incrementAndGet()
-
-            // Check for milestone achievements using in-memory counter
-            val currentTotal = allTimeBlockedCount.incrementAndGet()
-            val threshold = nextMilestoneThreshold
-            if (threshold != null && currentTotal >= threshold) {
-                // Prevent redundant coroutine launches while check is in progress
-                nextMilestoneThreshold = null
-                serviceScope.launch {
-                    try {
-                        notificationHelper.checkAndNotifyMilestone(currentTotal)
-                        // Update next threshold after check
-                        val lastMilestone = appPrefs.lastMilestoneBlocked.first()
-                        nextMilestoneThreshold =
-                            notificationHelper.nextMilestoneThreshold(lastMilestone)
-                    } catch (e: Exception) {
-                        Timber.e(e, "Error checking milestone")
-                        // Restore threshold so checks resume
-                        nextMilestoneThreshold = threshold
-                    }
-                }
-            }
-        } else {
-            // Forward to upstream DNS
-            forwardDnsQuery(query, outputStream, outputLock, upstreamDns, fallbackDns, dnsProtocol, dohUrl)
-
-            val elapsed = System.currentTimeMillis() - startTime
-            logDnsQuery(domain, false, query.queryType, elapsed, appName)
-            totalQueries.incrementAndGet()
-        }
-    }
-
-    private fun forwardDnsQuery(
-        query: DnsPacketParser.DnsQuery,
-        outputStream: FileOutputStream,
-        outputLock: Any,
-        upstreamDns: String,
-        fallbackDns: String,
-        dnsProtocol: DnsProtocol,
-        dohUrl: String
-    ) {
-
-        // Try primary DNS server first
-        var success = tryDnsQuery(query, outputStream, outputLock, upstreamDns, dohUrl, dnsProtocol, false)
-
-        // If primary fails and fallback is configured and different, try fallback (with PLAIN protocol)
-        if (!success && fallbackDns.isNotBlank() && fallbackDns != upstreamDns) {
-            Timber
-                .w("Primary DNS ($upstreamDns) failed for ${query.domain}, trying fallback ($fallbackDns) with PLAIN protocol")
-            success = tryDnsQuery(
-                query,
-                outputStream,
-                outputLock,
-                fallbackDns,
-                dohUrl,
-                DnsProtocol.PLAIN,
-                true
-            )
-        }
-
-        // If both failed, return SERVFAIL and notify user
-        if (!success) {
-            val failCount = consecutiveDnsFailures.incrementAndGet()
-            Timber
-                .e("Both primary and fallback DNS failed for ${query.domain}, returning SERVFAIL (consecutive: $failCount)")
-            val servfailResponse = DnsPacketParser.buildServfailResponse(query)
-            writeToTun(outputStream, outputLock, servfailResponse, "SERVFAIL")
-
-            // Notify user after 3+ consecutive failures (avoids one-off timeouts)
-            if (failCount >= 3) {
-                sendDnsErrorNotification(upstreamDns, fallbackDns, dnsProtocol)
-            }
-        } else {
-            // Reset failure counter on any success
-            consecutiveDnsFailures.set(0)
-        }
-    }
-
-    private fun tryDnsQuery(
-        query: DnsPacketParser.DnsQuery,
-        outputStream: FileOutputStream,
-        outputLock: Any,
-        dnsServer: String,
-        dohUrl: String,
-        protocol: DnsProtocol,
-        isFallback: Boolean
-    ): Boolean {
-        try {
-            // Get DNS response based on protocol
-            // Note: Using runBlocking for suspend functions is necessary here because
-            // we're in a blocking I/O context (processPackets loop). The VPN TUN interface
-            // requires synchronous packet processing with FileInputStream/FileOutputStream.
-            val dnsResponseData = when (protocol) {
-                DnsProtocol.DOH -> {
-                    Timber.d("Using DoH for ${query.domain} to $dohUrl")
-                    runBlocking { dohClient.query(dohUrl, query.rawDnsPayload) }
-                }
-
-                DnsProtocol.DOT -> {
-                    Timber.d("Using DoT for ${query.domain} to $dnsServer")
-                    runBlocking { dotClient.query(dnsServer, query.rawDnsPayload) }
-                }
-
-                DnsProtocol.DOQ -> {
-                    Timber.d("Using DoQ (HTTP/3 QUIC) for ${query.domain} to $dohUrl")
-                    runBlocking { doqClient.query(dohUrl, query.rawDnsPayload) }
-                }
-
-                DnsProtocol.PLAIN -> {
-                    Timber.d("Using plain DNS for ${query.domain} to $dnsServer")
-                    tryPlainDnsQuery(query, dnsServer)
-                }
-            }
-
-            if (dnsResponseData == null) {
-                Timber.w("DNS query failed for ${query.domain} using $protocol")
-                logDnsError(
-                    query.domain,
-                    "QUERY_FAILED",
-                    "Failed to get response using $protocol",
-                    dnsServer,
-                    isFallback
-                )
-                return false
-            }
-
-            // Build IP+UDP wrapper for the DNS response
-            val fullResponse = DnsPacketParser.buildIpUdpPacket(
-                sourceIp = query.destIp,
-                destIp = query.sourceIp,
-                sourcePort = query.destPort,
-                destPort = query.sourcePort,
-                payload = dnsResponseData
-            )
-
-            writeToTun(outputStream, outputLock, fullResponse, "DNS response")
-            return true
-
-        } catch (e: java.net.SocketTimeoutException) {
-            Timber.w(e, "DNS timeout for ${query.domain} on $dnsServer")
-            logDnsError(
-                query.domain,
-                "TIMEOUT",
-                e.message ?: "Socket timeout",
-                dnsServer,
-                isFallback
-            )
-            return false
-        } catch (e: java.io.IOException) {
-            Timber.w(e, "DNS IO error for ${query.domain} on $dnsServer")
-            logDnsError(
-                query.domain,
-                "IO_ERROR",
-                e.message ?: "IO exception",
-                dnsServer,
-                isFallback
-            )
-            return false
-        } catch (e: Exception) {
-            Timber.w(e, "DNS query failed for ${query.domain} on $dnsServer")
-            logDnsError(
-                query.domain,
-                "QUERY_ERROR",
-                e.message ?: "Unknown error",
-                dnsServer,
-                isFallback
-            )
-            return false
-        }
-    }
-
-    private fun tryPlainDnsQuery(query: DnsPacketParser.DnsQuery, dnsServer: String): ByteArray? {
-        var socket: DatagramSocket? = null
-        try {
-            socket = DatagramSocket()
-            protect(socket) // Prevent VPN loop
-
-            val serverAddress = InetAddress.getByName(dnsServer)
-            val requestPacket = DatagramPacket(
-                query.rawDnsPayload,
-                query.rawDnsPayload.size,
-                serverAddress,
-                53
-            )
-            socket.soTimeout = 5000 // 5 second timeout
-            socket.send(requestPacket)
-
-            // Receive response
-            val responseBuffer = ByteArray(1024)
-            val responsePacket = DatagramPacket(responseBuffer, responseBuffer.size)
-            socket.receive(responsePacket)
-
-            return responseBuffer.copyOf(responsePacket.length)
-
-        } catch (e: Exception) {
-            Timber.w("Plain DNS query failed: $e")
-            return null
-        } finally {
-            socket?.close()
-        }
-    }
-
-    /**
-     * Thread-safe write to the TUN output stream.
-     * With concurrent DNS query processing, multiple coroutines may produce responses
-     * simultaneously. This method ensures writes are atomic and prevents interleaving.
-     */
-    private fun writeToTun(
-        outputStream: FileOutputStream,
-        outputLock: Any,
-        data: ByteArray,
-        label: String
-    ) {
-        try {
-            synchronized(outputLock) {
-                outputStream.write(data)
-                outputStream.flush()
-            }
-        } catch (e: Exception) {
-            Timber.e(e, "Error writing $label response to TUN")
-        }
-    }
-
-    private fun logDnsError(
-        domain: String,
-        errorType: String,
-        errorMessage: String,
-        dnsServer: String,
-        attemptedFallback: Boolean
-    ) {
-        serviceScope.launch {
-            try {
-                dnsErrorDao.insert(
-                    DnsErrorEntry(
-                        domain = domain,
-                        errorType = errorType,
-                        errorMessage = errorMessage,
-                        dnsServer = dnsServer,
-                        attemptedFallback = attemptedFallback
-                    )
-                )
-            } catch (e: Exception) {
-                Timber.e("Failed to log DNS error: $e")
-            }
-        }
-    }
-
-    private fun logDnsQuery(
-        domain: String,
-        isBlocked: Boolean,
-        queryType: Int,
-        responseTimeMs: Long,
-        appName: String = "",
-        resolvedIp: String = "",
-        blockedBy: String = ""
-    ) {
-        serviceScope.launch {
-            try {
-                val typeStr = when (queryType) {
-                    1 -> "A"
-                    28 -> "AAAA"
-                    5 -> "CNAME"
-                    else -> "OTHER"
-                }
-                dnsLogDao.insert(
-                    DnsLogEntry(
-                        domain = domain,
-                        isBlocked = isBlocked,
-                        queryType = typeStr,
-                        responseTimeMs = responseTimeMs,
-                        appName = appName,
-                        resolvedIp = resolvedIp,
-                        blockedBy = blockedBy
-                    )
-                )
-            } catch (e: Exception) {
-                Timber.e("Failed to log DNS query: $e")
-            }
-        }
-    }
-
-    /**
-     * Resolve an A record for a domain via a protected UDP DNS query.
-     * Returns the 4-byte IPv4 address, or null if resolution fails.
-     */
-    private fun resolveARecordViaUdp(upstreamDns: String, domain: String): ByteArray? {
-        val transactionId = (System.nanoTime() and 0xFFFF).toInt()
-        val queryPayload = DnsPacketParser.buildDnsQueryPayload(domain, 1, transactionId)
-
-        var socket: DatagramSocket? = null
-        try {
-            socket = DatagramSocket()
-            protect(socket)
-
-            val serverAddress = InetAddress.getByName(upstreamDns)
-            val requestPacket = DatagramPacket(
-                queryPayload, queryPayload.size, serverAddress, 53
-            )
-            socket.soTimeout = 5000
-            socket.send(requestPacket)
-
-            val responseBuffer = ByteArray(1024)
-            val responsePacket = DatagramPacket(responseBuffer, responseBuffer.size)
-            socket.receive(responsePacket)
-
-            val responseData = responseBuffer.copyOf(responsePacket.length)
-            return DnsPacketParser.parseFirstARecord(responseData)
-        } finally {
-            socket?.close()
-        }
-    }
-
-
-    private fun formatIp(ip: ByteArray): String {
-        return ip.joinToString(".") { (it.toInt() and 0xFF).toString() }
     }
 
     private fun pauseVpn() {
@@ -1125,6 +563,9 @@ class AdBlockVpnService : VpnService() {
         isRestarting = false
         startTimestamp = 0L
 
+        // Stop Go tunnel engine
+        goTunnelAdapter.stop()
+
         // Stop network monitoring
         networkMonitor?.stopMonitoring()
 
@@ -1186,10 +627,6 @@ class AdBlockVpnService : VpnService() {
 
         // Stop notification updates
         stopNotificationUpdates()
-
-        // Release VPN service reference from DoH client
-        dohClient.setVpnService(null)
-        doqClient.setVpnService(null)
 
         serviceScope.cancel()
         try {
@@ -1589,5 +1026,12 @@ class AdBlockVpnService : VpnService() {
         } else {
             String.format(Locale.getDefault(), "%d:%02d", minutes, seconds)
         }
+    }
+
+    /**
+     * Wrapper for VPN service's protect method, exposed for GoTunnelAdapter.
+     */
+    fun protectSocket(fd: Int): Boolean {
+        return protect(fd)
     }
 }

@@ -299,6 +299,7 @@ class MmapDomainTrie(
     val nodeCount: Int,
     val domainCount: Int
 ) {
+    private val bufferLimit = buffer.limit()
     /** Alias for domainCount for API compatibility. */
     val size: Int get() = domainCount
 
@@ -314,6 +315,7 @@ class MmapDomainTrie(
 
     private fun matchWithWildcard(nodeOffset: Int, labels: List<String>, index: Int): Boolean {
         if (index < 0) return false
+        if (nodeOffset < 0 || nodeOffset >= bufferLimit) return false
         // Try exact label match
         val exactOffset = findChildOffset(nodeOffset, labels[index])
         if (exactOffset != null) {
@@ -345,10 +347,12 @@ class MmapDomainTrie(
     }
 
     private fun isTerminal(nodeOffset: Int): Boolean {
+        if (nodeOffset < 0 || nodeOffset >= bufferLimit) return false
         return buffer.get(nodeOffset).toInt() != 0
     }
 
     private fun findChildOffset(nodeOffset: Int, targetLabel: String): Int? {
+        if (nodeOffset < 0 || nodeOffset + 3 > bufferLimit) return null
         val targetBytes = targetLabel.toByteArray(Charsets.UTF_8)
         var pos = nodeOffset + 1 // skip isTerminal byte
         val childCount = buffer.getShort(pos).toInt() and 0xFFFF
@@ -359,6 +363,8 @@ class MmapDomainTrie(
             pos += 2
 
             // Compare label bytes directly
+            if (pos + labelLen + 4 > bufferLimit) return null // corrupted data
+
             if (labelLen == targetBytes.size) {
                 var match = true
                 for (b in 0 until labelLen) {
@@ -369,7 +375,13 @@ class MmapDomainTrie(
                 }
                 if (match) {
                     // Found — return child node offset
-                    return buffer.getInt(pos + labelLen)
+                    val childOffset = buffer.getInt(pos + labelLen)
+                    // Validate the offset is within buffer bounds
+                    if (childOffset < headerSize || childOffset >= bufferLimit) {
+                        Timber.e("Corrupted trie: childOffset=$childOffset out of bounds (limit=$bufferLimit)")
+                        return null
+                    }
+                    return childOffset
                 }
             }
 

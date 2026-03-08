@@ -113,8 +113,10 @@ dependencies {
     implementation(libs.ktor.client.core)
     implementation(libs.ktor.client.cio)
     implementation(libs.ktor.client.logging)
-    implementation(libs.okhttp)
-    implementation(libs.kwik)
+    
+    // Go Tunnel backend
+    implementation(files("libs/tunnel.aar"))
+
     implementation(libs.timber)
 
     // Kotlin Serialization

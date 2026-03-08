@@ -10,6 +10,8 @@ import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsChannel
 import io.ktor.utils.io.readAvailable
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import timber.log.Timber
 import java.io.BufferedReader
@@ -187,6 +189,12 @@ class FilterListRepository(
     @Volatile
     private var securityTrie: MmapDomainTrie? = null
 
+    private val loadMutex = Mutex()
+
+    init {
+        trieDir.mkdirs()
+    }
+
     private val whitelistedDomains = ConcurrentHashMap.newKeySet<String>()
 
     // Custom rules - higher priority than filter lists (small sets, keep as HashSet)
@@ -258,12 +266,21 @@ class FilterListRepository(
         }
 
         // Priority 4: Check security domains via Trie (malware/phishing)
-        if (securityTrie?.containsOrParent(domain) == true) {
-            return true
+        try {
+            if (securityTrie?.containsOrParent(domain) == true) {
+                return true
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Security trie lookup failed for: $domain")
         }
 
         // Priority 5: Check ad domains via Trie (mmap'd, near-zero heap)
-        return adTrie?.containsOrParent(domain) ?: false
+        return try {
+            adTrie?.containsOrParent(domain) ?: false
+        } catch (e: Exception) {
+            Timber.e(e, "Ad trie lookup failed for: $domain")
+            false
+        }
     }
 
     /**
@@ -281,12 +298,16 @@ class FilterListRepository(
         if (checkDomainAndParents(domain) { whitelistedDomains.contains(it) }) {
             return ""
         }
-        if (securityTrie?.containsOrParent(domain) == true) {
-            return BLOCK_REASON_SECURITY
-        }
-        if (adTrie?.containsOrParent(domain) == true) {
-            return BLOCK_REASON_FILTER_LIST
-        }
+        try {
+            if (securityTrie?.containsOrParent(domain) == true) {
+                return BLOCK_REASON_SECURITY
+            }
+        } catch (_: Exception) { }
+        try {
+            if (adTrie?.containsOrParent(domain) == true) {
+                return BLOCK_REASON_FILTER_LIST
+            }
+        } catch (_: Exception) { }
         return ""
     }
 
@@ -362,8 +383,9 @@ class FilterListRepository(
      * 3. **Full REBUILD** — filters removed or changed → rebuild everything
      */
     suspend fun loadAllEnabledFilters(): Result<Int> = withContext(Dispatchers.IO) {
-        try {
-            seedBundledFiltersIfNeeded()
+        loadMutex.withLock {
+            try {
+                seedBundledFiltersIfNeeded()
 
             val enabledLists = filterListDao.getEnabled()
             if (enabledLists.isEmpty()) {
@@ -471,7 +493,9 @@ class FilterListRepository(
                 }
                 adCount = adTrieBuilder.size
                 if (adCount > 0) {
-                    adTrieBuilder.saveToBinary(adTrieFile)
+                    val tempFile = File(adTrieFile.parent, adTrieFile.name + ".tmp")
+                    adTrieBuilder.saveToBinary(tempFile)
+                    tempFile.renameTo(adTrieFile)
                 }
                 adTrieBuilder.clear()
             } else {
@@ -500,7 +524,9 @@ class FilterListRepository(
                 }
                 secCount = secTrieBuilder.size
                 if (secCount > 0) {
-                    secTrieBuilder.saveToBinary(secTrieFile)
+                    val tempFile = File(secTrieFile.parent, secTrieFile.name + ".tmp")
+                    secTrieBuilder.saveToBinary(tempFile)
+                    tempFile.renameTo(secTrieFile)
                 }
                 secTrieBuilder.clear()
             } else {
@@ -511,11 +537,12 @@ class FilterListRepository(
             securityTrie =
                 if (secCount > 0) DomainTrie.loadFromMmap(secTrieFile) else null
 
-            saveFingerprintAndLog(fingerprintFile, currentFingerprint, startTime, "FULL REBUILD")
-            Result.success(adCount + secCount)
-        } catch (e: Exception) {
-            Timber.d("Failed to load filters: $e")
-            Result.failure(e)
+                saveFingerprintAndLog(fingerprintFile, currentFingerprint, startTime, "FULL REBUILD")
+                Result.success(adCount + secCount)
+            } catch (e: Exception) {
+                Timber.d("Failed to load filters: $e")
+                Result.failure(e)
+            }
         }
     }
 
@@ -558,7 +585,9 @@ class FilterListRepository(
 
         // Re-serialize
         if (trieBuilder.size > 0) {
-            trieBuilder.saveToBinary(trieFile)
+            val tempFile = File(trieFile.parent, trieFile.name + ".tmp")
+            trieBuilder.saveToBinary(tempFile)
+            tempFile.renameTo(trieFile)
         }
         val totalCount = trieBuilder.size
         trieBuilder.clear()
