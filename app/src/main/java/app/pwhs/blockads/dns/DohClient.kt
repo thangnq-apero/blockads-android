@@ -3,18 +3,26 @@ package app.pwhs.blockads.dns
 import android.net.VpnService
 import android.util.Base64
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
+import okhttp3.Call
+import okhttp3.Callback
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
 import timber.log.Timber
+import java.io.IOException
 import java.net.InetAddress
+import java.net.InetSocketAddress
 import java.net.Socket
 import java.util.concurrent.TimeUnit
 import javax.net.SocketFactory
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 /**
  * DNS-over-HTTPS (DoH) client with VPN socket protection.
@@ -82,86 +90,107 @@ class DohClient {
     /**
      * DoH GET query (RFC 8484 §4.1)
      */
-    suspend fun queryGet(dohUrl: String, dnsPayload: ByteArray): ByteArray? {
-        return withContext(Dispatchers.IO) {
+    suspend fun queryGet(dohUrl: String, dnsPayload: ByteArray): ByteArray? =
+        withContext(Dispatchers.IO) {
             try {
-                withTimeout(QUERY_TIMEOUT_MS) {
-                    val base64Dns = Base64.encodeToString(
-                        dnsPayload,
-                        Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING
-                    )
+                val base64Dns = Base64.encodeToString(
+                    dnsPayload,
+                    Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING
+                )
 
-                    val request = Request.Builder()
-                        .url("$dohUrl?dns=$base64Dns")
-                        .header("Accept", "application/dns-message")
-                        .get()
-                        .build()
+                val request = Request.Builder()
+                    .url("$dohUrl?dns=$base64Dns")
+                    .header("Accept", "application/dns-message")
+                    .get()
+                    .build()
 
-                    val response = getClient().newCall(request).execute()
-                    response.use { resp ->
-                        if (!resp.isSuccessful) {
-                            Timber.w("DoH GET returned ${resp.code}")
-                            return@withTimeout null
-                        }
-
-                        val bytes = resp.body?.bytes()
-                        if (bytes == null || bytes.size < 12) {
-                            Timber.w("DoH GET response invalid: ${bytes?.size ?: 0} bytes")
-                            return@withTimeout null
-                        }
-
-                        Timber.d("DoH GET ok: ${bytes.size} bytes")
-                        bytes
-                    }
-                }
+                executeAndParse(request, "DoH GET")
             } catch (e: Exception) {
                 Timber.e("DoH GET failed: $e")
                 null
             }
         }
-    }
 
     /**
      * DoH POST query (RFC 8484 §4.1)
      */
-    suspend fun queryPost(dohUrl: String, dnsPayload: ByteArray): ByteArray? {
-        return withContext(Dispatchers.IO) {
+    suspend fun queryPost(dohUrl: String, dnsPayload: ByteArray): ByteArray? =
+        withContext(Dispatchers.IO) {
             try {
-                withTimeout(QUERY_TIMEOUT_MS) {
-                    val request = Request.Builder()
-                        .url(dohUrl)
-                        .header("Accept", "application/dns-message")
-                        .post(dnsPayload.toRequestBody(DNS_MEDIA_TYPE))
-                        .build()
+                val request = Request.Builder()
+                    .url(dohUrl)
+                    .header("Accept", "application/dns-message")
+                    .post(dnsPayload.toRequestBody(DNS_MEDIA_TYPE))
+                    .build()
 
-                    val response = getClient().newCall(request).execute()
-                    response.use { resp ->
-                        if (!resp.isSuccessful) {
-                            Timber.w("DoH POST returned ${resp.code}")
-                            return@withTimeout null
-                        }
-
-                        val bytes = resp.body?.bytes()
-                        if (bytes == null || bytes.size < 12) {
-                            Timber.w("DoH POST response invalid: ${bytes?.size ?: 0} bytes")
-                            return@withTimeout null
-                        }
-
-                        Timber.d("DoH POST ok: ${bytes.size} bytes")
-                        bytes
-                    }
-                }
+                executeAndParse(request, "DoH POST")
             } catch (e: Exception) {
                 Timber.e("DoH POST failed: $e")
                 null
+            }
+        }
+
+    /**
+     * Execute an OkHttp request using async enqueue + suspendCancellableCoroutine
+     * to avoid blocking threads, and parse the DNS response.
+     */
+    private suspend fun executeAndParse(request: Request, label: String): ByteArray? {
+        return withTimeoutOrNull(QUERY_TIMEOUT_MS) {
+            val response = getClient().newCall(request).await()
+
+            response.use { resp ->
+                val protocol = resp.protocol
+                if (!resp.isSuccessful) {
+                    Timber.w("$label returned ${resp.code} via $protocol")
+                    return@withTimeoutOrNull null
+                }
+
+                val bytes = resp.body.bytes()
+                if (bytes.size < 12) {
+                    Timber.w("$label response invalid: ${bytes.size} bytes")
+                    return@withTimeoutOrNull null
+                }
+
+                Timber.d("$label ok: ${bytes.size} bytes via $protocol")
+                bytes
+            }
+        }
+    }
+
+    /**
+     * Extension to convert OkHttp's blocking Call into a suspend function
+     * using enqueue() for proper coroutine cancellation support.
+     *
+     * Unlike execute() which blocks the thread and can't be interrupted
+     * by withTimeout, enqueue() is truly async and cancel() propagates correctly.
+     */
+    private suspend fun Call.await(): Response = suspendCancellableCoroutine { continuation ->
+        enqueue(object : Callback {
+            override fun onResponse(call: Call, response: Response) {
+                continuation.resume(response)
+            }
+
+            override fun onFailure(call: Call, e: IOException) {
+                if (continuation.isCancelled) return
+                continuation.resumeWithException(e)
+            }
+        })
+
+        continuation.invokeOnCancellation {
+            try {
+                cancel()
+            } catch (ex: Throwable) {
+                Timber.w("Failed to cancel OkHttp call: $ex")
             }
         }
     }
 
     /**
      * SocketFactory that protects every socket from VPN routing via [VpnService.protect].
-     * OkHttp calls this factory for raw TCP sockets BEFORE TLS handshake,
-     * so protect() is applied at the right level.
+     *
+     * CRITICAL: Must create an unconnected socket, call protect(), then connect().
+     * Using Socket(host, port) would connect immediately BEFORE protect() is called,
+     * causing a VPN routing loop.
      */
     private class ProtectedSocketFactory(
         private val vpnService: VpnService
@@ -172,19 +201,29 @@ class DohClient {
         }
 
         override fun createSocket(host: String?, port: Int): Socket {
-            return Socket(host, port).also { vpnService.protect(it) }
+            val socket = createSocket()
+            socket.connect(InetSocketAddress(host, port))
+            return socket
         }
 
         override fun createSocket(host: String?, port: Int, localHost: InetAddress?, localPort: Int): Socket {
-            return Socket(host, port, localHost, localPort).also { vpnService.protect(it) }
+            val socket = createSocket()
+            socket.bind(InetSocketAddress(localHost, localPort))
+            socket.connect(InetSocketAddress(host, port))
+            return socket
         }
 
         override fun createSocket(host: InetAddress?, port: Int): Socket {
-            return Socket(host, port).also { vpnService.protect(it) }
+            val socket = createSocket()
+            socket.connect(InetSocketAddress(host, port))
+            return socket
         }
 
         override fun createSocket(address: InetAddress?, port: Int, localAddress: InetAddress?, localPort: Int): Socket {
-            return Socket(address, port, localAddress, localPort).also { vpnService.protect(it) }
+            val socket = createSocket()
+            socket.bind(InetSocketAddress(localAddress, localPort))
+            socket.connect(InetSocketAddress(address, port))
+            return socket
         }
     }
 }

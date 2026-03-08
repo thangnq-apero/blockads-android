@@ -26,7 +26,6 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import app.pwhs.blockads.data.dao.DnsLogDao
 import app.pwhs.blockads.data.entities.DnsProtocol
-import app.pwhs.blockads.data.entities.DnsProviders
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -175,6 +174,7 @@ class AdBlockVpnService : VpnService() {
         dohClient.setVpnService(this) // Protect DoH sockets from VPN routing loop
         dotClient = koin.get()
         doqClient = koin.get()
+        doqClient.setVpnService(this) // Protect DoQ sockets from VPN routing loop
         firewallRuleDao = koin.get()
         batteryMonitor = BatteryMonitor(this)
         appNameResolver = AppNameResolver(this)
@@ -1023,51 +1023,6 @@ class AdBlockVpnService : VpnService() {
         }
     }
 
-    /**
-     * Resolve SafeSearch domain IPs at VPN startup using a protected socket.
-     * Caches the resolved IPv4 addresses for use during DNS query handling.
-     */
-    private fun resolveSafeSearchIps(upstreamDns: String, cache: MutableMap<String, ByteArray>) {
-        val safeSearchDomains = listOf(
-            "forcesafesearch.google.com",
-            "strict.bing.com"
-        )
-        for (domain in safeSearchDomains) {
-            try {
-                val ip = resolveARecordViaUdp(upstreamDns, domain)
-                if (ip != null) {
-                    cache[domain] = ip
-                    Timber.d("SafeSearch resolved: $domain → ${formatIp(ip)}")
-                } else {
-                    Timber.w("SafeSearch: No A record for $domain")
-                }
-            } catch (e: Exception) {
-                Timber.e("SafeSearch: Failed to resolve $domain: $e")
-            }
-        }
-        Timber.e("SafeSearch IPs resolved: ${cache.size}/${safeSearchDomains.size}")
-    }
-
-    /**
-     * Resolve restrict.youtube.com IP at VPN startup for YouTube Restricted Mode.
-     */
-    private fun resolveYoutubeRestrictIp(
-        upstreamDns: String,
-        cache: MutableMap<String, ByteArray>
-    ) {
-        val domain = SafeSearchManager.YOUTUBE_RESTRICT_DOMAIN
-        try {
-            val ip = resolveARecordViaUdp(upstreamDns, domain)
-            if (ip != null) {
-                cache[domain] = ip
-                Timber.d("YouTube Restricted Mode resolved: $domain → ${formatIp(ip)}")
-            } else {
-                Timber.w("YouTube Restricted Mode: No A record for $domain")
-            }
-        } catch (e: Exception) {
-            Timber.e(e, "YouTube Restricted Mode: Failed to resolve $domain")
-        }
-    }
 
     private fun formatIp(ip: ByteArray): String {
         return ip.joinToString(".") { (it.toInt() and 0xFF).toString() }
@@ -1213,6 +1168,7 @@ class AdBlockVpnService : VpnService() {
 
         // Release VPN service reference from DoH client
         dohClient.setVpnService(null)
+        doqClient.setVpnService(null)
 
         serviceScope.cancel()
         try {

@@ -114,10 +114,9 @@ dependencies {
     implementation(libs.ktor.client.cio)
     implementation(libs.ktor.client.logging)
     implementation(libs.okhttp)
+    implementation(libs.kwik)
     implementation(libs.timber)
 
-    // Cronet (QUIC/HTTP3 for DNS-over-QUIC)
-    implementation(libs.cronet)
     // Kotlin Serialization
     implementation(libs.kotlinx.serialization.json)
 
