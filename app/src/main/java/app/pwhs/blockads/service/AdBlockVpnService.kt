@@ -254,12 +254,14 @@ class AdBlockVpnService : VpnService() {
                 connectingPhase = getString(R.string.vpn_phase_loading_filters)
                 updateNotification()
 
+                // Load whitelist + custom rules (fast, small sets) BEFORE the large filter trie
+                // This ensures they are immediately available for the Go engine.
+                filterRepo.loadWhitelist()
+                filterRepo.loadCustomRules()
+
                 filterRepo.seedDefaultsIfNeeded()
                 val result = filterRepo.loadAllEnabledFilters()
                 Timber.d("Filters loaded: ${result.getOrDefault(0)} domains")
-                // Always reload whitelist + custom rules (fast, small sets)
-                filterRepo.loadWhitelist()
-                filterRepo.loadCustomRules()
 
                 // ── Phase 2: Read all preferences in parallel ──
                 connectingPhase = getString(R.string.vpn_phase_preparing_dns)
