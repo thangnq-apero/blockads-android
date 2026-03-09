@@ -361,6 +361,7 @@ class AdBlockVpnService : VpnService() {
                 retryManager.reset()
                 isConnecting = false
                 connectingPhase = ""
+                isReconnecting = false
                 isRunning = true
                 appPrefs.setVpnEnabled(true)
                 vpnStartTime = System.currentTimeMillis()
