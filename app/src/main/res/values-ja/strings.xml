@@ -195,8 +195,9 @@
     <string name="settings_doq_server_url">DoQ サーバー URL</string>
     <string name="settings_upstream_dns">上流DNSサーバー</string>
     <string name="settings_fallback_dns">フォールバックDNSサーバー</string>
-    <string name="settings_fallback_dns_desc">フォールバックDNSは、プライマリDNSサーバーが失敗した場合に使用されます。常にプレーンUDPプロトコルを使用します。</string>
-    <string name="settings_fallback_dns_short_desc">プライマリDNS障害時のバックアップ（プレーンUDP）</string>
+    <string name="settings_fallback_dns_desc">フォールバックDNSは、プライマリDNSサーバーが失敗した場合に使用されます。バックアップDNSサーバーのIPアドレスを入力してください。</string>
+    <string name="settings_fallback_dns_short_desc">プライマリDNS障害時のバックアップとして使用</string>
+    <string name="dns_error_duplicate">フォールバックDNSをカスタムDNSと同じにすることはできません</string>
     <string name="dns_category_fallback">フォールバック</string>
     <string name="settings_fallback_dns_not_set">未設定（バックアップなし）</string>
     <string name="settings_custom_dns_server">カスタムDNSサーバー</string>

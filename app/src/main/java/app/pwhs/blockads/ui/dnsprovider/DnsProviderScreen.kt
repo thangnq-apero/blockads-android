@@ -33,6 +33,7 @@ import app.pwhs.blockads.ui.dnsprovider.component.CustomDnsDialog
 import app.pwhs.blockads.ui.dnsprovider.component.DnsProviderCard
 import app.pwhs.blockads.ui.dnsprovider.component.FallbackDnsCard
 import app.pwhs.blockads.ui.dnsprovider.component.FallbackDnsDialog
+import app.pwhs.blockads.ui.event.UiEventEffect
 import com.ramcosta.composedestinations.annotation.Destination
 import com.ramcosta.composedestinations.annotation.RootGraph
 import com.ramcosta.composedestinations.navigation.DestinationsNavigator
@@ -49,10 +50,17 @@ fun DnsProviderScreen(
     val selectedProviderId by viewModel.selectedProviderId.collectAsStateWithLifecycle()
     val customDnsEnabled by viewModel.customDnsEnabled.collectAsStateWithLifecycle()
     val customDnsDisplay by viewModel.customDnsDisplay.collectAsStateWithLifecycle()
+    val upstreamDns by viewModel.upstreamDns.collectAsStateWithLifecycle()
     val fallbackDns by viewModel.fallbackDns.collectAsStateWithLifecycle()
 
     var showCustomDialog by remember { mutableStateOf(false) }
     var showFallbackDialog by remember { mutableStateOf(false) }
+
+    var customDnsError by remember { mutableStateOf<String?>(null) }
+    var fallbackDnsError by remember { mutableStateOf<String?>(null) }
+    val duplicateErrorMsg = stringResource(R.string.dns_error_duplicate)
+
+    UiEventEffect(viewModel.events)
 
     Scaffold(
         modifier = modifier,
@@ -123,7 +131,6 @@ fun DnsProviderScreen(
                 CustomDnsCard(
                     isSelected = customDnsEnabled,
                     upstreamDns = customDnsDisplay,
-                    fallbackDns = fallbackDns,
                     onClick = { showCustomDialog = true }
                 )
             }
@@ -147,10 +154,21 @@ fun DnsProviderScreen(
     if (showCustomDialog) {
         CustomDnsDialog(
             upstreamDns = customDnsDisplay,
-            onDismiss = { showCustomDialog = false },
+            errorText = customDnsError,
+            onDismiss = { 
+                showCustomDialog = false 
+                customDnsError = null
+            },
             onSave = { upstream ->
-                viewModel.setCustomDns(upstream)
-                showCustomDialog = false
+                val parsed = viewModel.getParsedHost(upstream)
+                if (parsed.equals(fallbackDns, ignoreCase = true) ||
+                    upstream.trim().equals(fallbackDns, ignoreCase = true)) {
+                    customDnsError = duplicateErrorMsg
+                } else {
+                    viewModel.setCustomDns(upstream)
+                    showCustomDialog = false
+                    customDnsError = null
+                }
             }
         )
     }
@@ -158,10 +176,20 @@ fun DnsProviderScreen(
     if (showFallbackDialog) {
         FallbackDnsDialog(
             fallbackDns = fallbackDns,
-            onDismiss = { showFallbackDialog = false },
+            errorText = fallbackDnsError,
+            onDismiss = { 
+                showFallbackDialog = false 
+                fallbackDnsError = null
+            },
             onSave = { dns ->
-                viewModel.setFallbackDns(dns)
-                showFallbackDialog = false
+                val trimmed = dns.trim()
+                if (trimmed.equals(upstreamDns, ignoreCase = true)) {
+                    fallbackDnsError = duplicateErrorMsg
+                } else {
+                    viewModel.setFallbackDns(dns)
+                    showFallbackDialog = false
+                    fallbackDnsError = null
+                }
             }
         )
     }

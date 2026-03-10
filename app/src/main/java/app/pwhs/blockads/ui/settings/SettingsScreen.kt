@@ -98,6 +98,7 @@ fun SettingsScreen(
     val autoReconnect by viewModel.autoReconnect.collectAsStateWithLifecycle()
     val upstreamDns by viewModel.upstreamDns.collectAsStateWithLifecycle()
     val fallbackDns by viewModel.fallbackDns.collectAsStateWithLifecycle()
+    val customDnsDisplay by viewModel.customDnsDisplay.collectAsStateWithLifecycle()
     val filterLists by viewModel.filterLists.collectAsStateWithLifecycle()
     val whitelistDomains by viewModel.whitelistDomains.collectAsStateWithLifecycle()
 
@@ -271,7 +272,7 @@ fun SettingsScreen(
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                if (fallbackDns.isBlank()) upstreamDns else "$upstreamDns / $fallbackDns",
+                                if (fallbackDns.isBlank()) customDnsDisplay else "$customDnsDisplay / $fallbackDns",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.secondary
                             )

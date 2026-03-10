@@ -27,7 +27,6 @@ import app.pwhs.blockads.R
 fun CustomDnsCard(
     isSelected: Boolean,
     upstreamDns: String,
-    fallbackDns: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -60,7 +59,7 @@ fun CustomDnsCard(
                 if (isSelected) {
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = if (fallbackDns.isBlank()) upstreamDns else "$upstreamDns / $fallbackDns",
+                        text = upstreamDns,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.secondary,
                         fontWeight = FontWeight.Medium

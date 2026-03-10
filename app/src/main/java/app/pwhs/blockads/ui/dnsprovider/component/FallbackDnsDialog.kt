@@ -24,6 +24,7 @@ import app.pwhs.blockads.ui.theme.TextSecondary
 @Composable
 fun FallbackDnsDialog(
     fallbackDns: String,
+    errorText: String? = null,
     onDismiss: () -> Unit,
     onSave: (String) -> Unit,
     modifier: Modifier = Modifier
@@ -47,6 +48,8 @@ fun FallbackDnsDialog(
                     value = editFallback,
                     onValueChange = { editFallback = it },
                     modifier = Modifier.fillMaxWidth(),
+                    isError = errorText != null,
+                    supportingText = errorText?.let { { Text(color = MaterialTheme.colorScheme.error, text = it) } },
                     placeholder = { Text(stringResource(R.string.settings_fallback_dns_placeholder)) },
                     singleLine = true,
                     shape = RoundedCornerShape(8.dp)

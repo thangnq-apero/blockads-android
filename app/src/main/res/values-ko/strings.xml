@@ -195,8 +195,9 @@
     <string name="settings_doq_server_url">DoQ 서버 URL</string>
     <string name="settings_upstream_dns">업스트림 DNS 서버</string>
     <string name="settings_fallback_dns">대체 DNS 서버</string>
-    <string name="settings_fallback_dns_desc">대체 DNS는 기본 DNS 서버가 실패할 때 사용됩니다. 항상 일반 UDP 프로토콜을 사용합니다.</string>
-    <string name="settings_fallback_dns_short_desc">기본 DNS 장애 시 백업으로 사용 (일반 UDP)</string>
+    <string name="settings_fallback_dns_desc">대체 DNS는 기본 DNS 서버가 실패할 때 사용됩니다. 백업 DNS 서버의 IP 주소를 입력하세요.</string>
+    <string name="settings_fallback_dns_short_desc">기본 DNS 장애 시 백업으로 사용</string>
+    <string name="dns_error_duplicate">대체 DNS는 사용자 지정 DNS와 같을 수 없습니다</string>
     <string name="dns_category_fallback">대체</string>
     <string name="settings_fallback_dns_not_set">설정되지 않음 (백업 없음)</string>
     <string name="settings_save_custom_dns">Save DNS</string>

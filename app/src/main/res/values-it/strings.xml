@@ -226,8 +226,9 @@
     <string name="settings_upstream_dns_placeholder" translatable="false">8.8.8.8</string>
     <string name="settings_fallback_dns">Server DNS di Fallback</string>
     <string name="settings_fallback_dns_placeholder" translatable="false">1.1.1.1</string>
-    <string name="settings_fallback_dns_desc">Il DNS di fallback viene utilizzato quando il server DNS principale fallisce. Utilizza sempre il protocollo UDP semplice.</string>
-    <string name="settings_fallback_dns_short_desc">Usato quando il DNS principale fallisce (UDP semplice)</string>
+    <string name="settings_fallback_dns_desc">Il DNS di fallback viene utilizzato quando il server DNS principale fallisce. Inserisci l\'indirizzo IP di un server DNS di backup.</string>
+    <string name="settings_fallback_dns_short_desc">Usato come backup quando il DNS principale fallisce</string>
+    <string name="dns_error_duplicate">Il DNS di fallback non può essere uguale al DNS personalizzato</string>
     <string name="dns_category_fallback">Fallback</string>
     <string name="settings_fallback_dns_not_set">Non impostato (nessun backup)</string>
     <string name="settings_custom_dns_server">Server DNS Personalizzato</string>

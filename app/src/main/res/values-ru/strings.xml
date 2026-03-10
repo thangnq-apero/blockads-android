@@ -225,8 +225,9 @@
     <string name="settings_doq_server_url">URL-адрес сервера DoQ</string>
     <string name="settings_upstream_dns">Основной DNS-сервер</string>
     <string name="settings_fallback_dns">Резервный DNS-сервер</string>
-    <string name="settings_fallback_dns_desc">Резервный DNS используется при сбое основного DNS-сервера. Всегда использует протокол UDP.</string>
-    <string name="settings_fallback_dns_short_desc">Используется при сбое основного DNS (UDP)</string>
+    <string name="settings_fallback_dns_desc">Резервный DNS используется при сбое основного DNS-сервера. Введите IP-адрес резервного DNS-сервера.</string>
+    <string name="settings_fallback_dns_short_desc">Используется как резервный при сбое основного DNS</string>
+    <string name="dns_error_duplicate">Резервный DNS не может совпадать с пользовательским DNS</string>
     <string name="dns_category_fallback">Резервный</string>
     <string name="settings_fallback_dns_not_set">Не задан (без резерва)</string>
     <string name="settings_custom_dns_server">Пользовательский DNS-сервер</string>

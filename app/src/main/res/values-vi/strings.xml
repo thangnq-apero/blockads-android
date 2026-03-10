@@ -225,8 +225,9 @@
     <string name="settings_doq_server_url">URL máy chủ DoQ</string>
     <string name="settings_upstream_dns">Máy chủ DNS</string>
     <string name="settings_fallback_dns">Máy chủ DNS dự phòng</string>
-    <string name="settings_fallback_dns_desc">DNS dự phòng được sử dụng khi máy chủ DNS chính gặp lỗi. Luôn sử dụng giao thức UDP thuần.</string>
-    <string name="settings_fallback_dns_short_desc">Dùng khi DNS chính gặp lỗi (UDP thuần)</string>
+    <string name="settings_fallback_dns_desc">DNS dự phòng được sử dụng khi máy chủ DNS chính gặp lỗi. Nhập địa chỉ IP của máy chủ DNS dự phòng.</string>
+    <string name="settings_fallback_dns_short_desc">Dùng làm dự phòng khi DNS chính gặp lỗi</string>
+    <string name="dns_error_duplicate">DNS dự phòng không được trùng với DNS tuỳ chỉnh</string>
     <string name="dns_category_fallback">Dự phòng</string>
     <string name="settings_fallback_dns_not_set">Chưa đặt (không có dự phòng)</string>
     <string name="settings_custom_dns_server">Máy chủ DNS tùy chỉnh</string>

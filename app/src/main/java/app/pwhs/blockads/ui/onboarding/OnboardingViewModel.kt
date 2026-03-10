@@ -3,6 +3,7 @@ package app.pwhs.blockads.ui.onboarding
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import app.pwhs.blockads.data.datastore.AppPreferences
+import app.pwhs.blockads.data.entities.DnsProtocol
 import app.pwhs.blockads.data.entities.DnsProvider
 import app.pwhs.blockads.data.entities.DnsProviders
 import app.pwhs.blockads.ui.onboarding.data.ProtectionLevel
@@ -37,6 +38,15 @@ class OnboardingViewModel(
         val provider = _selectedDnsProvider.value
         appPrefs.setDnsProviderId(provider.id)
         appPrefs.setUpstreamDns(provider.ipAddress)
+
+        // Set protocol based on provider capabilities
+        if (provider.dohUrl != null) {
+            appPrefs.setDnsProtocol(DnsProtocol.DOH)
+            appPrefs.setDohUrl(provider.dohUrl)
+        } else {
+            appPrefs.setDnsProtocol(DnsProtocol.PLAIN)
+        }
+
         appPrefs.setFallbackDns(selectFallbackDns(provider).ipAddress)
 
         // Mark onboarding as completed

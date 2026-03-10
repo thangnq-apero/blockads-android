@@ -195,8 +195,9 @@
     <string name="settings_doq_server_url">URL เซิร์ฟเวอร์ DoQ</string>
     <string name="settings_upstream_dns">เซิร์ฟเวอร์ DNS ต้นทาง</string>
     <string name="settings_fallback_dns">เซิร์ฟเวอร์ DNS สำรอง</string>
-    <string name="settings_fallback_dns_desc">DNS สำรองจะถูกใช้เมื่อ DNS หลักล้มเหลว ใช้โปรโตคอล UDP เสมอ</string>
-    <string name="settings_fallback_dns_short_desc">ใช้เมื่อ DNS หลักล้มเหลว (UDP ธรรมดา)</string>
+    <string name="settings_fallback_dns_desc">DNS สำรองจะถูกใช้เมื่อเซิร์ฟเวอร์ DNS หลักของคุณล้มเหลว ป้อนที่อยู่ IP ของเซิร์ฟเวอร์ DNS สำรอง</string>
+    <string name="settings_fallback_dns_short_desc">ใช้เป็นตัวสำรองเมื่อ DNS หลักล้มเหลว</string>
+    <string name="dns_error_duplicate">DNS สำรองไม่สามารถเป็นอันเดียวกับ DNS ที่กำหนดเองได้</string>
     <string name="dns_category_fallback">สำรอง</string>
     <string name="settings_fallback_dns_not_set">ไม่ได้ตั้งค่า (ไม่มีสำรอง)</string>
     <string name="settings_custom_dns_server">เซิร์ฟเวอร์ DNS ที่กำหนดเอง</string>

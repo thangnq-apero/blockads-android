@@ -9,9 +9,16 @@ import app.pwhs.blockads.data.entities.DnsProtocol
 import app.pwhs.blockads.data.entities.DnsProvider
 import app.pwhs.blockads.data.entities.DnsProviders
 import app.pwhs.blockads.service.AdBlockVpnService
+import app.pwhs.blockads.R
+import app.pwhs.blockads.ui.event.UiEvent
+import app.pwhs.blockads.ui.event.toast
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -19,6 +26,16 @@ class DnsProviderViewModel(
     private val appPrefs: AppPreferences,
     application: Application
 ) : AndroidViewModel(application) {
+
+    private val _events = MutableSharedFlow<UiEvent>(extraBufferCapacity = 1)
+    val events: SharedFlow<UiEvent> = _events.asSharedFlow()
+
+    val upstreamDns: StateFlow<String> = appPrefs.upstreamDns
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            AppPreferences.DEFAULT_UPSTREAM_DNS
+        )
 
     val fallbackDns: StateFlow<String> = appPrefs.fallbackDns
         .stateIn(
@@ -59,7 +76,7 @@ class DnsProviderViewModel(
         when (protocol) {
             DnsProtocol.DOH -> doh
             DnsProtocol.DOT -> "tls://$upstream"
-            DnsProtocol.DOQ -> "quic://${doh.removePrefix("https://")}"
+            DnsProtocol.DOQ -> if (doh.startsWith("quic://", ignoreCase = true)) doh else "quic://${doh.removePrefix("https://")}"
             DnsProtocol.PLAIN -> upstream
         }
     }.stateIn(
@@ -99,9 +116,31 @@ class DnsProviderViewModel(
     }
 
     fun setFallbackDns(dns: String) {
+        val trimmed = dns.trim()
         viewModelScope.launch {
-            appPrefs.setFallbackDns(dns.trim())
+            val currentUpstream = appPrefs.upstreamDns.first()
+            if (currentUpstream.equals(trimmed, ignoreCase = true)) {
+                _events.toast(R.string.dns_error_duplicate)
+                return@launch
+            }
+            appPrefs.setFallbackDns(trimmed)
             AdBlockVpnService.requestRestart(getApplication<Application>().applicationContext)
+        }
+    }
+
+    fun getParsedHost(input: String): String {
+        val trimmed = input.trim()
+        return when {
+            trimmed.startsWith("https://", ignoreCase = true) -> {
+                try { java.net.URL(trimmed).host } catch (_: Exception) { trimmed }
+            }
+            trimmed.startsWith("quic://", ignoreCase = true) -> {
+                try { java.net.URI(trimmed).host ?: trimmed.removePrefix("quic://").removePrefix("QUIC://") } catch (_: Exception) { trimmed.removePrefix("quic://").removePrefix("QUIC://") }
+            }
+            trimmed.startsWith("tls://", ignoreCase = true) -> {
+                trimmed.removePrefix("tls://").removePrefix("TLS://")
+            }
+            else -> trimmed
         }
     }
 
@@ -110,37 +149,33 @@ class DnsProviderViewModel(
         if (trimmed.isBlank()) return // Guard against empty input
 
         viewModelScope.launch {
+            val parsedHost = getParsedHost(trimmed)
+
+            val currentFallback = appPrefs.fallbackDns.first()
+            if (currentFallback.equals(parsedHost, ignoreCase = true)) {
+                _events.toast(R.string.dns_error_duplicate)
+                return@launch
+            }
+
             appPrefs.setDnsProviderId(null)
             when {
                 trimmed.startsWith("https://", ignoreCase = true) -> {
                     appPrefs.setDnsProtocol(DnsProtocol.DOH)
                     appPrefs.setDohUrl(trimmed)
-                    // Extract host from DoH URL for upstream fallback identification
-                    val host = try {
-                        java.net.URL(trimmed).host
-                    } catch (_: Exception) { trimmed }
-                    appPrefs.setUpstreamDns(host)
+                    appPrefs.setUpstreamDns(parsedHost)
                 }
                 trimmed.startsWith("quic://", ignoreCase = true) -> {
-                    // Convert quic://host/path to https://host/path for DoH3 transport
-                    val httpsUrl = trimmed.replaceFirst("quic://", "https://", ignoreCase = true)
-                    // Ensure path exists (default to /dns-query if none)
-                    val finalUrl = if (java.net.URL(httpsUrl).path.isNullOrBlank())
-                        "$httpsUrl/dns-query" else httpsUrl
                     appPrefs.setDnsProtocol(DnsProtocol.DOQ)
-                    appPrefs.setDohUrl(finalUrl)
-                    val host = try {
-                        java.net.URL(finalUrl).host
-                    } catch (_: Exception) { trimmed }
-                    appPrefs.setUpstreamDns(host)
+                    appPrefs.setDohUrl(trimmed)
+                    appPrefs.setUpstreamDns(parsedHost)
                 }
                 trimmed.startsWith("tls://", ignoreCase = true) -> {
                     appPrefs.setDnsProtocol(DnsProtocol.DOT)
-                    appPrefs.setUpstreamDns(trimmed.removePrefix("tls://").removePrefix("TLS://"))
+                    appPrefs.setUpstreamDns(parsedHost)
                 }
                 else -> {
                     appPrefs.setDnsProtocol(DnsProtocol.PLAIN)
-                    appPrefs.setUpstreamDns(trimmed)
+                    appPrefs.setUpstreamDns(parsedHost)
                 }
             }
             AdBlockVpnService.requestRestart(getApplication<Application>().applicationContext)

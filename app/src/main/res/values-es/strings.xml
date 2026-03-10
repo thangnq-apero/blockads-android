@@ -195,8 +195,9 @@
     <string name="settings_doq_server_url">URL del servidor DoQ</string>
     <string name="settings_upstream_dns">Servidor DNS principal</string>
     <string name="settings_fallback_dns">Servidor DNS de respaldo</string>
-    <string name="settings_fallback_dns_desc">El DNS de respaldo se usa cuando el servidor DNS principal falla. Siempre usa protocolo UDP simple.</string>
-    <string name="settings_fallback_dns_short_desc">Se usa cuando falla el DNS principal (UDP simple)</string>
+    <string name="settings_fallback_dns_desc">El DNS de respaldo se usa cuando el servidor DNS principal falla. Ingresa la dirección IP de un servidor DNS de respaldo.</string>
+    <string name="settings_fallback_dns_short_desc">Se usa como respaldo cuando falla el DNS principal</string>
+    <string name="dns_error_duplicate">El DNS de respaldo no puede ser igual al DNS personalizado</string>
     <string name="dns_category_fallback">Respaldo</string>
     <string name="settings_fallback_dns_not_set">No configurado (sin respaldo)</string>
     <string name="settings_custom_dns_server">Servidor DNS personalizado</string>

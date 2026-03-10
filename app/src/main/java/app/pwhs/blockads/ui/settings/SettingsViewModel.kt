@@ -80,7 +80,7 @@ class SettingsViewModel(
      * - Plain DNS: IP address (e.g., "8.8.8.8")
      * - DoH: full URL (e.g., "https://dns.google/dns-query")
      * - DoT: tls:// prefix + server (e.g., "tls://dns.google")
-     * - DoQ: quic:// prefix + server (e.g., "quic://dns.adguard-dns.com/dns-query")
+     * - DoQ: quic:// prefix + server (e.g., "quic://dns.adguard-dns.com")
      */
     val customDnsDisplay: StateFlow<String> = combine(
         appPrefs.dnsProtocol,
@@ -90,7 +90,7 @@ class SettingsViewModel(
         when (protocol) {
             DnsProtocol.DOH -> doh
             DnsProtocol.DOT -> "tls://$upstream"
-            DnsProtocol.DOQ -> "quic://${doh.removePrefix("https://")}"
+            DnsProtocol.DOQ -> if (doh.startsWith("quic://", ignoreCase = true)) doh else "quic://${doh.removePrefix("https://")}"
             DnsProtocol.PLAIN -> upstream
         }
     }.stateIn(
@@ -159,8 +159,14 @@ class SettingsViewModel(
     }
 
     fun setFallbackDns(dns: String) {
+        val trimmed = dns.trim()
         viewModelScope.launch {
-            appPrefs.setFallbackDns(dns)
+            val currentUpstream = appPrefs.upstreamDns.first()
+            if (currentUpstream.equals(trimmed, ignoreCase = true)) {
+                _events.toast(R.string.dns_error_duplicate)
+                return@launch
+            }
+            appPrefs.setFallbackDns(trimmed)
             requestVpnRestart()
         }
     }
@@ -177,34 +183,43 @@ class SettingsViewModel(
         if (trimmed.isBlank()) return // Guard against empty input
 
         viewModelScope.launch {
+            val parsedHost = when {
+                trimmed.startsWith("https://", ignoreCase = true) -> {
+                    try { java.net.URL(trimmed).host } catch (_: Exception) { trimmed }
+                }
+                trimmed.startsWith("quic://", ignoreCase = true) -> {
+                    try { java.net.URI(trimmed).host ?: trimmed.removePrefix("quic://").removePrefix("QUIC://") } catch (_: Exception) { trimmed.removePrefix("quic://").removePrefix("QUIC://") }
+                }
+                trimmed.startsWith("tls://", ignoreCase = true) -> {
+                    trimmed.removePrefix("tls://").removePrefix("TLS://")
+                }
+                else -> trimmed
+            }
+
+            val currentFallback = appPrefs.fallbackDns.first()
+            if (currentFallback.equals(parsedHost, ignoreCase = true)) {
+                _events.toast(R.string.dns_error_duplicate)
+                return@launch
+            }
+
             when {
                 trimmed.startsWith("https://", ignoreCase = true) -> {
                     appPrefs.setDnsProtocol(DnsProtocol.DOH)
                     appPrefs.setDohUrl(trimmed)
-                    // Extract host from DoH URL for upstream fallback identification
-                    val host = try {
-                        java.net.URL(trimmed).host
-                    } catch (_: Exception) { trimmed }
-                    appPrefs.setUpstreamDns(host)
+                    appPrefs.setUpstreamDns(parsedHost)
                 }
                 trimmed.startsWith("quic://", ignoreCase = true) -> {
-                    val httpsUrl = trimmed.replaceFirst("quic://", "https://", ignoreCase = true)
-                    val finalUrl = if (java.net.URL(httpsUrl).path.isNullOrBlank())
-                        "$httpsUrl/dns-query" else httpsUrl
                     appPrefs.setDnsProtocol(DnsProtocol.DOQ)
-                    appPrefs.setDohUrl(finalUrl)
-                    val host = try {
-                        java.net.URL(finalUrl).host
-                    } catch (_: Exception) { trimmed }
-                    appPrefs.setUpstreamDns(host)
+                    appPrefs.setDohUrl(trimmed)
+                    appPrefs.setUpstreamDns(parsedHost)
                 }
                 trimmed.startsWith("tls://", ignoreCase = true) -> {
                     appPrefs.setDnsProtocol(DnsProtocol.DOT)
-                    appPrefs.setUpstreamDns(trimmed.removePrefix("tls://").removePrefix("TLS://"))
+                    appPrefs.setUpstreamDns(parsedHost)
                 }
                 else -> {
                     appPrefs.setDnsProtocol(DnsProtocol.PLAIN)
-                    appPrefs.setUpstreamDns(trimmed)
+                    appPrefs.setUpstreamDns(parsedHost)
                 }
             }
             requestVpnRestart()

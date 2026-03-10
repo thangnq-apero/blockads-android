@@ -34,6 +34,7 @@ import app.pwhs.blockads.ui.theme.TextSecondary
 @Composable
 fun CustomDnsDialog(
     upstreamDns: String,
+    errorText: String? = null,
     onDismiss: () -> Unit,
     onSave: (String) -> Unit,
     modifier: Modifier = Modifier
@@ -48,6 +49,7 @@ fun CustomDnsDialog(
             when {
                 input.startsWith("https://", ignoreCase = true) -> DnsProtocol.DOH
                 input.startsWith("tls://", ignoreCase = true) -> DnsProtocol.DOT
+                input.startsWith("quic://", ignoreCase = true) -> DnsProtocol.DOQ
                 input.isNotBlank() -> DnsProtocol.PLAIN
                 else -> null
             }
@@ -76,6 +78,8 @@ fun CustomDnsDialog(
                     value = editDns,
                     onValueChange = { editDns = it },
                     modifier = Modifier.fillMaxWidth(),
+                    isError = errorText != null,
+                    supportingText = errorText?.let { { Text(color = MaterialTheme.colorScheme.error, text = it) } },
                     placeholder = { Text(stringResource(R.string.settings_custom_dns_placeholder)) },
                     singleLine = true,
                     shape = RoundedCornerShape(8.dp)
@@ -95,6 +99,11 @@ fun CustomDnsDialog(
                                 Icons.Default.Security,
                                 stringResource(R.string.settings_detected_dot),
                                 MaterialTheme.colorScheme.tertiary
+                            )
+                            DnsProtocol.DOQ -> Triple(
+                                Icons.Default.Security,
+                                stringResource(R.string.settings_detected_doq),
+                                MaterialTheme.colorScheme.secondary
                             )
                             else -> Triple(
                                 Icons.Default.Wifi,

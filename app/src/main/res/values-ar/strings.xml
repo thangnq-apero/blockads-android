@@ -472,8 +472,9 @@
     <string name="test_block_ads_title">اختبار حظر الإعلانات</string>
     <string name="settings_dns_protocol_doq">DoQ</string>
     <string name="settings_doq_server_url">عنوان خادم DoQ</string>
-    <string name="settings_fallback_dns_desc">يتم استخدام DNS الاحتياطي عندما يفشل خادم DNS الأساسي. يستخدم دائمًا بروتوكول UDP العادي.</string>
-    <string name="settings_fallback_dns_short_desc">يستخدم كبديل عند فشل DNS الأساسي (UDP العادي)</string>
+    <string name="settings_fallback_dns_desc">يتم استخدام DNS الاحتياطي عندما يفشل خادم DNS الأساسي. أدخل عنوان IP لخادم DNS الاحتياطي.</string>
+    <string name="settings_fallback_dns_short_desc">يستخدم كبديل عند فشل DNS الأساسي</string>
+    <string name="dns_error_duplicate">لا يمكن أن يكون DNS الاحتياطي هو نفسه DNS المخصص</string>
     <string name="dns_category_fallback">نسخة احتياطية</string>
     <string name="settings_detected_doq">DNS-over-QUIC (DoQ)</string>
     <string name="settings_fallback_dns_not_set">غير معين (لا يوجد نسخة احتياطية)</string>
