@@ -21,6 +21,7 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
@@ -42,6 +43,8 @@ import com.ramcosta.composedestinations.rememberNavHostEngine
 import com.ramcosta.composedestinations.spec.Direction
 import timber.log.Timber
 import androidx.compose.ui.Modifier
+import app.pwhs.blockads.data.datastore.AppPreferences
+import org.koin.compose.koinInject
 
 sealed class Screen(
     val destination: Direction,
@@ -111,6 +114,9 @@ fun BlockAdsApp(onRequestVpnPermission: () -> Unit, modifier: Modifier = Modifie
         FilterSetupScreenDestination.route
     )
 
+    val appPrefs: AppPreferences = koinInject()
+    val showBottomNavLabels by appPrefs.showBottomNavLabels.collectAsState(initial = true)
+
     Scaffold(
         modifier = modifier,
         bottomBar = {
@@ -139,17 +145,20 @@ fun BlockAdsApp(onRequestVpnPermission: () -> Unit, modifier: Modifier = Modifie
                                     contentDescription = stringResource(screen.labelRes)
                                 )
                             },
-                            label = {
-                                Text(
-                                    text = stringResource(screen.labelRes),
-                                    textAlign = TextAlign.Center,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    style = LocalTextStyle.current.copy(
-                                        fontSize = 12.sp
+                            label = if (showBottomNavLabels) {
+                                {
+                                    Text(
+                                        text = stringResource(screen.labelRes),
+                                        textAlign = TextAlign.Center,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        style = LocalTextStyle.current.copy(
+                                            fontSize = 12.sp
+                                        )
                                     )
-                                )
-                            },
+                                }
+                            } else null,
+                            alwaysShowLabel = showBottomNavLabels,
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = MaterialTheme.colorScheme.primary,
                                 selectedTextColor = MaterialTheme.colorScheme.primary,

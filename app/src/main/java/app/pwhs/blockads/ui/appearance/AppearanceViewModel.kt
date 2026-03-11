@@ -29,6 +29,13 @@ class AppearanceViewModel(
     val accentColor: StateFlow<String> = appPrefs.accentColor
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AppPreferences.ACCENT_GREEN)
 
+    val showBottomNavLabels: StateFlow<Boolean> = appPrefs.showBottomNavLabels
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
+    fun setShowBottomNavLabels(show: Boolean) {
+        viewModelScope.launch { appPrefs.setShowBottomNavLabels(show) }
+    }
+
     fun setThemeMode(mode: String) {
         viewModelScope.launch { appPrefs.setThemeMode(mode) }
     }

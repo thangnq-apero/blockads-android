@@ -46,6 +46,7 @@ class AppPreferences(private val context: Context) {
         private val KEY_ACTIVE_PROFILE_ID = longPreferencesKey("active_profile_id")
         private val KEY_ACCENT_COLOR = stringPreferencesKey("accent_color")
         private val KEY_FIREWALL_ENABLED = booleanPreferencesKey("firewall_enabled")
+        private val KEY_SHOW_BOTTOM_NAV_LABELS = booleanPreferencesKey("show_bottom_nav_labels")
 
         const val PROTECTION_BASIC = "BASIC"
         const val PROTECTION_STANDARD = "STANDARD"
@@ -209,7 +210,9 @@ class AppPreferences(private val context: Context) {
             prefs[KEY_FIREWALL_ENABLED] ?: false
         }
 
-
+    val showBottomNavLabels: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[KEY_SHOW_BOTTOM_NAV_LABELS] ?: true
+    }
 
     suspend fun setVpnEnabled(enabled: Boolean) {
         context.dataStore.edit { prefs ->
@@ -379,6 +382,12 @@ class AppPreferences(private val context: Context) {
     suspend fun setFirewallEnabled(enabled: Boolean) {
         context.dataStore.edit { prefs ->
             prefs[KEY_FIREWALL_ENABLED] = enabled
+        }
+    }
+
+    suspend fun setShowBottomNavLabels(show: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_SHOW_BOTTOM_NAV_LABELS] = show
         }
     }
 
