@@ -541,6 +541,7 @@
     <string name="firewall_schedule_hour_plus">Hour +</string>
     <string name="firewall_schedule_minute_plus">Min +</string>
     <string name="block_reason_firewall">Firewall</string>
+    <string name="block_reason_upstream_dns">Upstream DNS</string>
     <string name="settings_firewall">Firewall</string>
     <string name="settings_firewall_desc">Block internet access per app</string>
 
@@ -560,5 +561,14 @@
     <string name="filter_chip_all">All</string>
     <string name="filter_chip_enabled">Enabled</string>
     <string name="filter_chip_disabled">Disabled</string>
+
+    <string name="dns_custom_primary_label">Primary</string>
+    <string name="dns_custom_fallback_label">Fallback</string>
+    <string name="dns_custom_extra_label">Extra</string>
+    <string name="dns_custom_add_server">Add Server</string>
+    <string name="dns_custom_max_reached">Maximum number of servers reached</string>
+    <string name="dns_custom_remove_server">Remove Server</string>
+    <string name="dns_custom_duplicate">Server already exists</string>
+    <string name="dns_custom_empty">Server address cannot be empty</string>
 
 </resources>

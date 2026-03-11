@@ -18,6 +18,8 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"github.com/miekg/dns"
 )
 
 // LogCallback is the interface for receiving DNS query events in Kotlin.
@@ -512,12 +514,69 @@ func (e *Engine) handleForward(queryInfo *DNSQueryInfo, appName string, startTim
 		return
 	}
 
+	// Detect upstream DNS blocking (e.g., NextDNS/AdGuard DNS returning 0.0.0.0)
+	if isUpstreamBlocked(resp) {
+		response := BuildForwardedResponse(queryInfo, resp)
+		e.writeToTUN(response)
+		e.totalQueries.Add(1)
+		e.blockedQueries.Add(1)
+
+		elapsed := time.Since(startTime).Milliseconds()
+		logf("BLOCKED: %s (by: upstream_dns, app: %s)", queryInfo.Domain, appName)
+		e.notifyLog(queryInfo.Domain, true, queryInfo.QueryType, elapsed, appName, "", "upstream_dns")
+		return
+	}
+
 	response := BuildForwardedResponse(queryInfo, resp)
 	e.writeToTUN(response)
 	e.totalQueries.Add(1)
 
 	elapsed := time.Since(startTime).Milliseconds()
 	e.notifyLog(queryInfo.Domain, false, queryInfo.QueryType, elapsed, appName, "", "")
+}
+
+// isUpstreamBlocked checks if a DNS response indicates the domain was blocked
+// by the upstream DNS server (e.g., NextDNS, AdGuard DNS, ControlD).
+//
+// Blocking DNS servers typically return 0.0.0.0 (A) or :: (AAAA) for blocked domains.
+// We detect this by checking if ALL answer records contain null/zero IPs.
+//
+// To avoid false positives:
+// - NXDOMAIN responses are NOT flagged (could be a typo like "googleee.com")
+// - Empty responses (no answer section) are NOT flagged
+// - Responses with a mix of null and real IPs are NOT flagged
+func isUpstreamBlocked(rawResp []byte) bool {
+	var msg dns.Msg
+	if err := msg.Unpack(rawResp); err != nil {
+		return false
+	}
+
+	// Must have answer records — empty or NXDOMAIN is not "blocked by upstream"
+	if len(msg.Answer) == 0 {
+		return false
+	}
+
+	// Check if ALL A/AAAA records are null IPs
+	nullCount := 0
+	ipRecordCount := 0
+
+	for _, rr := range msg.Answer {
+		switch r := rr.(type) {
+		case *dns.A:
+			ipRecordCount++
+			if r.A.Equal(net.IPv4zero) {
+				nullCount++
+			}
+		case *dns.AAAA:
+			ipRecordCount++
+			if r.AAAA.Equal(net.IPv6zero) {
+				nullCount++
+			}
+		}
+	}
+
+	// Only flag if we found IP records and ALL of them are null
+	return ipRecordCount > 0 && nullCount == ipRecordCount
 }
 
 // writeToTUN writes a packet to the TUN device.

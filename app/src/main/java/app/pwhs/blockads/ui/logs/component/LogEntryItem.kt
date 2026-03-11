@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -238,6 +239,38 @@ fun LogEntryItem(
                         )
                     }
                 }
+                
+                // Block source tag
+                if (entry.isBlocked && entry.blockedBy.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    val (sourceText, sourceColor) = when (entry.blockedBy.uppercase()) {
+                        app.pwhs.blockads.data.repository.FilterListRepository.BLOCK_REASON_FILTER_LIST -> 
+                            stringResource(R.string.block_reason_filter_list) to DangerRed
+                        app.pwhs.blockads.data.repository.FilterListRepository.BLOCK_REASON_SECURITY -> 
+                            stringResource(R.string.block_reason_security) to app.pwhs.blockads.ui.theme.SecurityOrange
+                        app.pwhs.blockads.data.repository.FilterListRepository.BLOCK_REASON_CUSTOM_RULE -> 
+                            stringResource(R.string.block_reason_custom_rule) to WhitelistAmber
+                        app.pwhs.blockads.data.repository.FilterListRepository.BLOCK_REASON_FIREWALL -> 
+                            stringResource(R.string.block_reason_firewall) to MaterialTheme.colorScheme.primary
+                        app.pwhs.blockads.data.repository.FilterListRepository.BLOCK_REASON_UPSTREAM_DNS, "UPSTREAM_DNS" -> 
+                            stringResource(R.string.block_reason_upstream_dns) to app.pwhs.blockads.ui.theme.UpstreamDnsPurple
+                        else -> entry.blockedBy to TextSecondary
+                    }
+                    
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(sourceColor.copy(alpha = 0.15f))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = sourceText,
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = androidx.compose.ui.unit.TextUnit(10f, androidx.compose.ui.unit.TextUnitType.Sp)),
+                            color = sourceColor,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
             }
 
             // Quick action button + status label
@@ -258,9 +291,9 @@ fun LogEntryItem(
                             modifier = Modifier.size(28.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.CheckCircle,
+                                imageVector = Icons.Default.Block,
                                 contentDescription = stringResource(R.string.log_action_unblock),
-                                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                                tint = DangerRed.copy(alpha = 0.7f),
                                 modifier = Modifier.size(16.dp)
                             )
                         }
@@ -270,9 +303,9 @@ fun LogEntryItem(
                             modifier = Modifier.size(28.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Block,
+                                imageVector = Icons.Default.CheckCircle,
                                 contentDescription = stringResource(R.string.log_action_block),
-                                tint = DangerRed.copy(alpha = 0.7f),
+                                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
                                 modifier = Modifier.size(16.dp)
                             )
                         }

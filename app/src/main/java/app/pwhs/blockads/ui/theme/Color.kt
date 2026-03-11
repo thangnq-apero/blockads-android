@@ -64,3 +64,5 @@ val LightTextSecondary = Color(0xFF656D76)
 val WhitelistAmber = Color(0xFFFFC107)
 
 val SecurityOrange = Color(0xFFFF9800)
+
+val UpstreamDnsPurple = Color(0xFFA855F7)
