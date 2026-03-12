@@ -404,7 +404,17 @@ Desteklenen formatlar:
     <string name="log_bulk_selected">"%d seçildi"</string>
     <string name="log_bulk_block">"Tümünü Engelle"</string>
     <string name="log_bulk_whitelist">"Tümünü Beyaz Listeye Ekle"</string>
-    <string name="log_bulk_done">"Tamamlamak"</string>
+    <string name="log_wildcard_whitelist_domain">Tüm alt alan adlarına izin ver</string>
+    <string name="log_wildcard_whitelisted">%1$s alan adı ve tüm alt alan adları beyaz listeye eklendi</string>
+    <string name="block_reason_upstream_dns">Upstream DNS</string>
+    <string name="dns_custom_primary_label">Birincil</string>
+    <string name="dns_custom_fallback_label">Yedek</string>
+    <string name="dns_custom_extra_label">Ek</string>
+    <string name="dns_custom_add_server">Sunucu ekle</string>
+    <string name="dns_custom_max_reached">Maksimum sunucu sayısına ulaşıldı</string>
+    <string name="dns_custom_remove_server">Sunucuyu kaldır</string>
+    <string name="dns_custom_duplicate">Sunucu zaten mevcut</string>
+    <string name="dns_custom_empty">Sunucu adresi boş olamaz</string>
     <string name="log_unblock_domain">"Bu alan adının engelini kaldır"</string>
 
     <string name="log_domain_unblocked">Domain unblocked: %s</string>
