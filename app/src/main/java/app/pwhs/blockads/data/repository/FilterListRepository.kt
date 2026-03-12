@@ -435,6 +435,12 @@ class FilterListRepository(
                 if (enabledLists.isEmpty()) {
                     adTrie = null
                     securityTrie = null
+                    File(trieDir, "ad_domains.trie").delete()
+                    File(trieDir, "security_domains.trie").delete()
+                    File(trieDir, "ad_domains.bloom").delete()
+                    File(trieDir, "security_domains.bloom").delete()
+                    File(trieDir, "trie_fingerprint.txt").delete()
+                    _domainCountFlow.value = 0
                     return@withContext Result.success(0)
                 }
 
@@ -556,6 +562,7 @@ class FilterListRepository(
                     adTrieBuilder.clear()
                 } else {
                     adTrieFile.delete()
+                    File(trieDir, "ad_domains.bloom").delete()
                 }
 
                 val secFilters =
@@ -590,6 +597,7 @@ class FilterListRepository(
                     secTrieBuilder.clear()
                 } else {
                     secTrieFile.delete()
+                    File(trieDir, "security_domains.bloom").delete()
                 }
 
                 adTrie = if (adCount > 0) DomainTrie.loadFromMmap(adTrieFile) else null
