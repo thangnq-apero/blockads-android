@@ -1,2 +1,1 @@
 package_name("app.pwhs.blockads")
-json_key_file("fastlane/play-store-key.json")
