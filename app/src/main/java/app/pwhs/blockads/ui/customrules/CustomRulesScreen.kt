@@ -2,6 +2,8 @@ package app.pwhs.blockads.ui.customrules
 
 import android.content.Context
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,6 +18,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Upload
@@ -24,6 +28,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -67,6 +72,61 @@ fun CustomRulesScreen(
     var showMenuDropdown by remember { mutableStateOf(false) }
     var showDeleteAllDialog by remember { mutableStateOf(false) }
     var showInfoDialog by remember { mutableStateOf(false) }
+    var showExportFormatDialog by remember { mutableStateOf(false) }
+    var selectedExportFormat by remember { mutableStateOf(ExportFormat.JSON) }
+
+    // SAF: Export file launcher
+    val exportFileLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument(
+            if (selectedExportFormat == ExportFormat.JSON) "application/json" else "text/plain"
+        )
+    ) { uri ->
+        uri?.let {
+            viewModel.exportRulesToUri(
+                uri = it,
+                format = selectedExportFormat,
+                onSuccess = { count ->
+                    Toast.makeText(
+                        context,
+                        resource.getString(R.string.rules_exported, count),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                },
+                onError = { errorMsg ->
+                    Toast.makeText(
+                        context,
+                        resource.getString(R.string.export_failed, errorMsg),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            )
+        }
+    }
+
+    // SAF: Import file launcher
+    val importFileLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let {
+            viewModel.importRulesFromUri(
+                uri = it,
+                onSuccess = { count ->
+                    Toast.makeText(
+                        context,
+                        resource.getString(R.string.rules_imported, count),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                },
+                onError = { errorMsg ->
+                    Toast.makeText(
+                        context,
+                        resource.getString(R.string.import_failed, errorMsg),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            )
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -90,6 +150,7 @@ fun CustomRulesScreen(
                             expanded = showMenuDropdown,
                             onDismissRequest = { showMenuDropdown = false }
                         ) {
+                            // ── Clipboard-based ──
                             DropdownMenuItem(
                                 text = { Text(stringResource(R.string.import_rules)) },
                                 onClick = {
@@ -118,6 +179,35 @@ fun CustomRulesScreen(
                                     Icon(Icons.Default.Download, contentDescription = null)
                                 }
                             )
+
+                            HorizontalDivider()
+
+                            // ── File-based (SAF) ──
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.import_from_file)) },
+                                onClick = {
+                                    showMenuDropdown = false
+                                    importFileLauncher.launch(
+                                        arrayOf("application/json", "text/plain", "*/*")
+                                    )
+                                },
+                                leadingIcon = {
+                                    Icon(Icons.Default.FileUpload, contentDescription = null)
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.export_to_file)) },
+                                onClick = {
+                                    showMenuDropdown = false
+                                    showExportFormatDialog = true
+                                },
+                                leadingIcon = {
+                                    Icon(Icons.Default.FileDownload, contentDescription = null)
+                                }
+                            )
+
+                            HorizontalDivider()
+
                             DropdownMenuItem(
                                 text = { Text(stringResource(R.string.delete_all_rules)) },
                                 onClick = {
@@ -230,6 +320,44 @@ fun CustomRulesScreen(
         )
     }
 
+    // ── Export Format Dialog ──
+    if (showExportFormatDialog) {
+        AlertDialog(
+            onDismissRequest = { showExportFormatDialog = false },
+            title = { Text(stringResource(R.string.export_format_title)) },
+            text = {
+                Column {
+                    TextButton(onClick = {
+                        showExportFormatDialog = false
+                        selectedExportFormat = ExportFormat.JSON
+                        exportFileLauncher.launch("blockads_rules.json")
+                    }) {
+                        Text(
+                            stringResource(R.string.export_format_json),
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                    }
+                    TextButton(onClick = {
+                        showExportFormatDialog = false
+                        selectedExportFormat = ExportFormat.TXT
+                        exportFileLauncher.launch("blockads_rules.txt")
+                    }) {
+                        Text(
+                            stringResource(R.string.export_format_txt),
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showExportFormatDialog = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            }
+        )
+    }
+
     if (showInfoDialog) {
         InfoDialog(onDismiss = { showInfoDialog = false })
     }
@@ -239,3 +367,4 @@ fun CustomRulesScreen(
         viewModel.clearError()
     }
 }
+

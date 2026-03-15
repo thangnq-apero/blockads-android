@@ -7,6 +7,7 @@ require (
 	github.com/quic-go/quic-go v0.48.2
 	golang.org/x/mobile v0.0.0-20231127183840-76ac6878050a
 	golang.org/x/sys v0.29.0
+	golang.zx2c4.com/wireguard v0.0.0-20231211153847-12269c276173
 )
 
 require (
@@ -20,6 +21,7 @@ require (
 	golang.org/x/net v0.28.0 // indirect
 	golang.org/x/sync v0.10.0 // indirect
 	golang.org/x/tools v0.23.0 // indirect
+	golang.zx2c4.com/wintun v0.0.0-20230126152724-0fa3db229ce2 // indirect
 )
 
 replace golang.org/x/mobile => golang.org/x/mobile v0.0.0-20231127183840-76ac6878050a

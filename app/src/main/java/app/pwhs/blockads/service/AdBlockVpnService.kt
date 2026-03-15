@@ -12,6 +12,7 @@ import android.os.ParcelFileDescriptor
 import app.pwhs.blockads.MainActivity
 import app.pwhs.blockads.R
 import app.pwhs.blockads.data.datastore.AppPreferences
+import app.pwhs.blockads.data.entities.WireGuardConfig
 import app.pwhs.blockads.data.repository.FilterListRepository
 import app.pwhs.blockads.data.dao.FirewallRuleDao
 import app.pwhs.blockads.util.AppNameResolver
@@ -424,9 +425,18 @@ class AdBlockVpnService : VpnService() {
                     }
                 }
                 
+                // Read routing mode and WireGuard config from preferences
+                val routingMode = appPrefs.getRoutingModeSnapshot()
+                val wgConfigJson = if (routingMode == AppPreferences.ROUTING_MODE_WIREGUARD) {
+                    appPrefs.getWgConfigJsonSnapshot() ?: ""
+                } else {
+                    ""
+                }
+
                 vpnInterface?.let {
                     // start() blocks the coroutine while reading from TUN
-                    goTunnelAdapter.start(it)
+                    // WireGuard init happens atomically inside Go before any packets are read
+                    goTunnelAdapter.start(it, wgConfigJson)
                 }
 
             } catch (e: Exception) {
@@ -439,29 +449,75 @@ class AdBlockVpnService : VpnService() {
 
     private fun establishVpn(whitelistedApps: Set<String>): Boolean {
         // First check if the system still grants us the VPN permission.
-        // It's possible another VPN app took over or the user revoked it while the system was off.
         if (VpnService.prepare(this) != null) {
             Timber.e("VPN is not prepared or permission was revoked.")
-            // Stop without a normal notification and show the error badge immediately
             stopVpn(showStoppedNotification = false)
             showRevokedNotification()
             return false
         }
 
         return try {
-            // Establish VPN — only route DNS traffic, NOT all traffic
-            // We use a fake DNS server IP (10.0.0.1) and only route that IP
-            // through the TUN. All other traffic uses the normal network.
-            val builder = Builder()
-                .setSession("BlockAds")
-                .addAddress("10.0.0.2", 32)
-                .addRoute("10.0.0.1", 32)    // Only route fake DNS IP through TUN
-                .addDnsServer("10.0.0.1")     // System sends DNS queries here
-                .addAddress("fd00::2", 128)   // IPv6 TUN address
-                .addRoute("fd00::1", 128)     // Route IPv6 DNS through TUN
-                .addDnsServer("fd00::1")       // IPv6 DNS server
-                .setBlocking(true)
-                .setMtu(1500)
+            // Check routing mode to decide VPN configuration
+            val routingMode = kotlinx.coroutines.runBlocking {
+                appPrefs.getRoutingModeSnapshot()
+            }
+            val wgConfig: WireGuardConfig? = if (routingMode == AppPreferences.ROUTING_MODE_WIREGUARD) {
+                val json = kotlinx.coroutines.runBlocking { appPrefs.getWgConfigJsonSnapshot() }
+                json?.let {
+                    try { WireGuardConfig.fromJson(it) } catch (e: Exception) {
+                        Timber.e(e, "Failed to parse WireGuard config, falling back to direct")
+                        null
+                    }
+                }
+            } else null
+
+            val builder = if (wgConfig != null) {
+                // WireGuard mode — full-route VPN (all traffic through TUN)
+                Timber.d("Establishing VPN in WireGuard mode")
+                val b = Builder()
+                    .setSession("BlockAds WireGuard")
+                    .setBlocking(true)
+                    .setMtu(1280)
+
+                // Add WireGuard interface addresses
+                for (addr in wgConfig.interfaceConfig.address) {
+                    val parts = addr.split("/")
+                    val ip = parts[0]
+                    val prefix = parts.getOrNull(1)?.toIntOrNull()
+                    if (ip.contains(":")) {
+                        b.addAddress(ip, prefix ?: 128)
+                    } else {
+                        b.addAddress(ip, prefix ?: 32)
+                    }
+                }
+
+                // Route ALL traffic through WireGuard
+                b.addRoute("0.0.0.0", 0)
+                b.addRoute("::", 0)
+
+                // DNS servers from WireGuard config
+                for (dnsServer in wgConfig.interfaceConfig.dns) {
+                    try {
+                        b.addDnsServer(dnsServer)
+                    } catch (e: Exception) {
+                        Timber.w(e, "Could not add DNS server: $dnsServer")
+                    }
+                }
+                b
+            } else {
+                // Direct mode — only route DNS traffic
+                Timber.d("Establishing VPN in DNS-only mode")
+                Builder()
+                    .setSession("BlockAds")
+                    .addAddress("10.0.0.2", 32)
+                    .addRoute("10.0.0.1", 32)
+                    .addDnsServer("10.0.0.1")
+                    .addAddress("fd00::2", 128)
+                    .addRoute("fd00::1", 128)
+                    .addDnsServer("fd00::1")
+                    .setBlocking(true)
+                    .setMtu(1500)
+            }
 
             // Exclude our own app from VPN to avoid loops
             try {
@@ -568,7 +624,7 @@ class AdBlockVpnService : VpnService() {
         isRestarting = false
         startTimestamp = 0L
 
-        // Stop Go tunnel engine
+        // Stop Go tunnel engine (also stops WireGuard adapter via Router.Stop())
         goTunnelAdapter.stop()
 
         // Stop network monitoring

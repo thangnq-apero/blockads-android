@@ -24,6 +24,7 @@ import tunnel.SocketProtector
  * - Implement [FirewallChecker] so Go calls Kotlin's FirewallManager for per-app blocking
  * - Implement [SocketProtector] so Go can protect sockets from VPN routing loop
  * - Receive DNS log events from Go and write to Room DB
+ * - Pass WireGuard config JSON to Go engine on startup (unified pipeline)
  */
 class GoTunnelAdapter(
     private val vpnService: AdBlockVpnService,
@@ -170,8 +171,11 @@ class GoTunnelAdapter(
      * This method blocks the calling thread until [stop] is called.
      *
      * @param vpnInterface The TUN file descriptor from VpnService
+     * @param wgConfigJson Optional WireGuard config JSON. If non-empty, WireGuard
+     *                     is initialized inside Go BEFORE the packet read loop starts.
+     *                     Pass "" for DNS-only mode.
      */
-    fun start(vpnInterface: ParcelFileDescriptor) {
+    fun start(vpnInterface: ParcelFileDescriptor, wgConfigJson: String = "") {
         if (isRunning) return
         isRunning = true
 
@@ -184,7 +188,7 @@ class GoTunnelAdapter(
         updateTries()
 
         val fd = vpnInterface.fd
-        Timber.d("Starting Go tunnel engine with fd=$fd")
+        Timber.d("Starting Go tunnel engine with fd=$fd, wg=${wgConfigJson.isNotEmpty()}")
 
         // Create socket protector that delegates to VpnService.protect()
         val protector = SocketProtector { fd ->
@@ -197,7 +201,8 @@ class GoTunnelAdapter(
         }
 
         // Start the Go engine (this blocks the thread)
-        engine.start(fd.toLong(), protector)
+        // WireGuard setup happens atomically inside Go before any packets are read.
+        engine.start(fd.toLong(), protector, wgConfigJson)
     }
 
     /**
@@ -241,4 +246,3 @@ class GoTunnelAdapter(
         }
     }
 }
-

@@ -47,6 +47,11 @@ class AppPreferences(private val context: Context) {
         private val KEY_ACCENT_COLOR = stringPreferencesKey("accent_color")
         private val KEY_FIREWALL_ENABLED = booleanPreferencesKey("firewall_enabled")
         private val KEY_SHOW_BOTTOM_NAV_LABELS = booleanPreferencesKey("show_bottom_nav_labels")
+        private val KEY_ROUTING_MODE = stringPreferencesKey("routing_mode")
+        private val KEY_WG_CONFIG_JSON = stringPreferencesKey("wg_config_json")
+
+        const val ROUTING_MODE_DIRECT = "direct"
+        const val ROUTING_MODE_WIREGUARD = "wireguard"
 
         const val PROTECTION_BASIC = "BASIC"
         const val PROTECTION_STANDARD = "STANDARD"
@@ -213,6 +218,14 @@ class AppPreferences(private val context: Context) {
 
     val showBottomNavLabels: Flow<Boolean> = context.dataStore.data.map { prefs ->
         prefs[KEY_SHOW_BOTTOM_NAV_LABELS] ?: true
+    }
+
+    val routingMode: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[KEY_ROUTING_MODE] ?: ROUTING_MODE_DIRECT
+    }
+
+    val wgConfigJson: Flow<String?> = context.dataStore.data.map { prefs ->
+        prefs[KEY_WG_CONFIG_JSON]
     }
 
     suspend fun setVpnEnabled(enabled: Boolean) {
@@ -394,5 +407,29 @@ class AppPreferences(private val context: Context) {
 
     suspend fun getWhitelistedAppsSnapshot(): Set<String> {
         return whitelistedApps.first()
+    }
+
+    suspend fun setRoutingMode(mode: String) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_ROUTING_MODE] = mode
+        }
+    }
+
+    suspend fun setWgConfigJson(json: String?) {
+        context.dataStore.edit { prefs ->
+            if (json == null) {
+                prefs.remove(KEY_WG_CONFIG_JSON)
+            } else {
+                prefs[KEY_WG_CONFIG_JSON] = json
+            }
+        }
+    }
+
+    suspend fun getRoutingModeSnapshot(): String {
+        return routingMode.first()
+    }
+
+    suspend fun getWgConfigJsonSnapshot(): String? {
+        return wgConfigJson.first()
     }
 }

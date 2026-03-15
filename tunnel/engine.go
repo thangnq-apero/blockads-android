@@ -91,6 +91,10 @@ type Engine struct {
 	running bool
 	tunFile *os.File
 
+	// Pipeline components
+	router      *Router
+	interceptor *DnsInterceptor
+
 	// Stats
 	totalQueries   atomic.Int64
 	blockedQueries atomic.Int64
@@ -104,10 +108,25 @@ type Stats struct {
 
 // NewEngine creates a new Engine instance.
 func NewEngine() *Engine {
-	return &Engine{
+	router := NewRouter()
+	e := &Engine{
 		safeSearch:   NewSafeSearch(),
 		responseType: ResponseCustomIP,
+		router:       router,
 	}
+	e.interceptor = NewDnsInterceptor(e, router)
+	return e
+}
+
+// GetRouter returns the engine's Router for setting outbound adapters.
+func (e *Engine) GetRouter() *Router {
+	return e.router
+}
+
+// SetOutboundAdapter sets the active outbound adapter on the router.
+// Pass nil to switch to DNS-only mode (no proxy).
+func (e *Engine) SetOutboundAdapter(adapter OutboundAdapter) {
+	e.router.SetAdapter(adapter)
 }
 
 // SetDomainChecker sets the Kotlin-side domain checker.
@@ -236,10 +255,17 @@ func (e *Engine) SetYouTubeRestricted(enabled bool) {
 	e.safeSearch.SetYouTubeRestricted(enabled)
 }
 
-// Start begins processing DNS packets from the TUN file descriptor.
+// Start begins processing packets from the TUN file descriptor.
 // protector is called to protect sockets from VPN routing loop.
+// wgConfigJSON: if non-empty, WireGuard is initialized from this JSON config
+// BEFORE the packet read loop starts. Pass "" for DNS-only mode.
+//
 // This function blocks until Stop() is called.
-func (e *Engine) Start(fd int, protector SocketProtector) {
+//
+// Pipeline:
+//   TUN fd → DnsInterceptor → DNS (port 53) → adblock engine
+//                            → non-DNS       → Router → OutboundAdapter
+func (e *Engine) Start(fd int, protector SocketProtector, wgConfigJSON string) {
 	e.mu.Lock()
 	if e.running {
 		e.mu.Unlock()
@@ -278,29 +304,48 @@ func (e *Engine) Start(fd int, protector SocketProtector) {
 
 	logf("Engine started, reading from TUN fd=%d", fd)
 
-	// Packet processing loop
-	buf := make([]byte, 32767) // MAX_PACKET_SIZE
-	for e.running {
-		n, err := e.tunFile.Read(buf)
+	// ── WireGuard Init (before read loop) ────────────────────────────
+	// If wgConfigJSON is provided, set up WireGuard adapter FIRST.
+	// WireGuard must be fully online before we start reading packets.
+	if wgConfigJSON != "" {
+		logf("WireGuard config provided, initializing...")
+
+		wgCfg, err := ParseWgConfigJSON(wgConfigJSON)
 		if err != nil {
-			if e.running {
-				logf("TUN read error: %v", err)
+			logf("WireGuard config parse error: %v", err)
+			// Fall through to DNS-only mode
+		} else {
+			ipcConfig, err := BuildIpcConfig(wgCfg)
+			if err != nil {
+				logf("WireGuard IPC config build error: %v", err)
+			} else {
+				// Create a virtual channelTUN for wireguard-go.
+				// DnsInterceptor is the sole reader of the real TUN.
+				// Non-DNS packets → channelTUN.Inject() → wireguard-go.
+				// Decrypted responses → channelTUN.Write() → real TUN.
+				tunDevice := newChannelTUN(e.tunFile)
+				wgAdapter, err := NewWgOutbound(tunDevice, ipcConfig)
+				if err != nil {
+					logf("WireGuard adapter create error: %v", err)
+				} else {
+					if err := wgAdapter.Start(); err != nil {
+						logf("WireGuard adapter start error: %v", err)
+					} else {
+						e.router.SetAdapter(wgAdapter)
+						logf("WireGuard adapter fully initialized and active")
+					}
+				}
 			}
-			break
 		}
-		if n <= 0 {
-			continue
-		}
-
-		// Parse the IP packet
-		queryInfo := ParseTUNPacket(buf, n)
-		if queryInfo == nil {
-			continue // Not a DNS query, drop silently
-		}
-
-		// Handle DNS query in a goroutine for concurrency
-		go e.handleDNSQuery(queryInfo)
+	} else {
+		logf("No WireGuard config, running in DNS-only mode")
 	}
+
+	// ── Packet Read Loop ─────────────────────────────────────────────
+	// DnsInterceptor reads from TUN, routes DNS to adblock engine,
+	// and non-DNS to Router → active OutboundAdapter.
+	// This call blocks until Stop() is called.
+	e.interceptor.Run(e.tunFile)
 
 	logf("Engine stopped")
 }
@@ -311,6 +356,17 @@ func (e *Engine) Stop() {
 	defer e.mu.Unlock()
 
 	e.running = false
+
+	// Stop the interceptor (breaks the read loop)
+	if e.interceptor != nil {
+		e.interceptor.Stop()
+	}
+
+	// Stop the router and its active adapter
+	if e.router != nil {
+		e.router.Stop()
+	}
+
 	if e.tunFile != nil {
 		e.tunFile.Close() // Safely close the duplicated fd
 		e.tunFile = nil
