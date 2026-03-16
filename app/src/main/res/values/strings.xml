@@ -373,6 +373,15 @@
     <string name="ok">OK</string>
     <string name="block_this_domain">Block this domain</string>
     <string name="add_to_custom_rules">Add to custom rules</string>
+    <string name="import_from_file">Import from File</string>
+    <string name="export_to_file">Export to File</string>
+    <string name="export_format_title">Export Format</string>
+    <string name="export_format_json">JSON (.json)</string>
+    <string name="export_format_txt">Text (.txt)</string>
+    <string name="rules_exported">Exported %d rules</string>
+    <string name="export_failed">Export failed: %s</string>
+    <string name="import_failed">Import failed: %s</string>
+    <string name="import_no_valid_rules">No valid rules found in file</string>
 
     <!-- App Management -->
     <string name="app_management_title">App Management</string>
@@ -573,5 +582,47 @@
     <string name="dns_custom_remove_server">Remove Server</string>
     <string name="dns_custom_duplicate">Server already exists</string>
     <string name="dns_custom_empty">Server address cannot be empty</string>
+
+    <!-- WireGuard Import -->
+    <string name="wireguard_import_title">WireGuard Import</string>
+    <string name="wireguard_import_button">Import .conf</string>
+    <string name="wireguard_empty_title">No configuration loaded</string>
+    <string name="wireguard_empty_desc">Tap the button below to import a WireGuard .conf file</string>
+    <string name="wireguard_section_interface">Interface</string>
+    <string name="wireguard_section_peer">Peer %d</string>
+    <string name="wireguard_label_address">Address</string>
+    <string name="wireguard_label_private_key">Private Key</string>
+    <string name="wireguard_label_dns">DNS</string>
+    <string name="wireguard_label_listen_port">Listen Port</string>
+    <string name="wireguard_label_public_key">Public Key</string>
+    <string name="wireguard_label_endpoint">Endpoint</string>
+    <string name="wireguard_label_allowed_ips">Allowed IPs</string>
+    <string name="wireguard_label_preshared_key">Preshared Key</string>
+    <string name="wireguard_label_keepalive">Persistent Keepalive</string>
+    <string name="wireguard_keepalive_value">%d seconds</string>
+    <string name="wireguard_toggle_key_visibility">Toggle key visibility</string>
+    <string name="wireguard_copy_key">Copy key</string>
+    <string name="wireguard_connect">Connect Tunnel</string>
+    <string name="wireguard_disconnect">Disconnect Tunnel</string>
+    <string name="wireguard_save_activate">Save &amp; Activate</string>
+    <string name="wireguard_clear">Clear WireGuard</string>
+    <string name="wireguard_active_label">WireGuard Active — Restart VPN to apply</string>
+
+    <!-- HTTPS Filtering -->
+    <string name="https_filtering_title">HTTPS Filtering</string>
+    <string name="https_filtering_toggle_label">HTTPS Popup Blocker</string>
+    <string name="https_filtering_status_active">Active — Filtering popups</string>
+    <string name="https_filtering_status_inactive">Inactive</string>
+    <string name="https_filtering_explain_title">How does this work?</string>
+    <string name="https_filtering_explain_body">HTTPS Filtering intercepts web traffic from your selected browsers and injects a script to block annoying popups, pop-unders, and redirect ads.\n\nTo do this, a local Root CA certificate must be installed on your device. This certificate is generated locally and never leaves your phone. Banking apps, Google, and other sensitive services are never intercepted.</string>
+    <string name="https_filtering_ca_title">Root CA Certificate</string>
+    <string name="https_filtering_ca_desc">To block popups on HTTPS sites, install the BlockAds Root CA certificate on your device. Follow the steps below.</string>
+    <string name="https_filtering_export_ca">Step 1: Save Certificate to Downloads</string>
+    <string name="https_filtering_cert_saved">Certificate saved to Downloads!</string>
+    <string name="https_filtering_install_steps">Step 2: Install the certificate manually:\n\n1. Go to Settings → Security → Encryption &amp; credentials\n2. Tap \"Install a certificate\" → \"CA certificate\"\n3. Select \"BlockAds-RootCA.crt\" from Downloads\n4. Confirm the installation</string>
+    <string name="https_filtering_open_settings">Open Security Settings</string>
+    <string name="https_filtering_browser_section">Browser Selection</string>
+    <string name="https_filtering_browser_desc">Select browsers to block popups in. Only selected apps are filtered.</string>
+    <string name="https_filtering_settings_desc">Block popups &amp; redirects in browsers</string>
 
 </resources>

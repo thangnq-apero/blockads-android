@@ -47,6 +47,13 @@ class AppPreferences(private val context: Context) {
         private val KEY_ACCENT_COLOR = stringPreferencesKey("accent_color")
         private val KEY_FIREWALL_ENABLED = booleanPreferencesKey("firewall_enabled")
         private val KEY_SHOW_BOTTOM_NAV_LABELS = booleanPreferencesKey("show_bottom_nav_labels")
+        private val KEY_ROUTING_MODE = stringPreferencesKey("routing_mode")
+        private val KEY_WG_CONFIG_JSON = stringPreferencesKey("wg_config_json")
+        private val KEY_HTTPS_FILTERING_ENABLED = booleanPreferencesKey("https_filtering_enabled")
+        private val KEY_SELECTED_BROWSERS = stringSetPreferencesKey("selected_browsers")
+
+        const val ROUTING_MODE_DIRECT = "direct"
+        const val ROUTING_MODE_WIREGUARD = "wireguard"
 
         const val PROTECTION_BASIC = "BASIC"
         const val PROTECTION_STANDARD = "STANDARD"
@@ -213,6 +220,14 @@ class AppPreferences(private val context: Context) {
 
     val showBottomNavLabels: Flow<Boolean> = context.dataStore.data.map { prefs ->
         prefs[KEY_SHOW_BOTTOM_NAV_LABELS] ?: true
+    }
+
+    val routingMode: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[KEY_ROUTING_MODE] ?: ROUTING_MODE_DIRECT
+    }
+
+    val wgConfigJson: Flow<String?> = context.dataStore.data.map { prefs ->
+        prefs[KEY_WG_CONFIG_JSON]
     }
 
     suspend fun setVpnEnabled(enabled: Boolean) {
@@ -394,5 +409,58 @@ class AppPreferences(private val context: Context) {
 
     suspend fun getWhitelistedAppsSnapshot(): Set<String> {
         return whitelistedApps.first()
+    }
+
+    suspend fun setRoutingMode(mode: String) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_ROUTING_MODE] = mode
+        }
+    }
+
+    suspend fun setWgConfigJson(json: String?) {
+        context.dataStore.edit { prefs ->
+            if (json == null) {
+                prefs.remove(KEY_WG_CONFIG_JSON)
+            } else {
+                prefs[KEY_WG_CONFIG_JSON] = json
+            }
+        }
+    }
+
+    suspend fun getRoutingModeSnapshot(): String {
+        return routingMode.first()
+    }
+
+    suspend fun getWgConfigJsonSnapshot(): String? {
+        return wgConfigJson.first()
+    }
+
+    // ── HTTPS Filtering ──────────────────────────────────────────────────
+
+    suspend fun setHttpsFilteringEnabled(enabled: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_HTTPS_FILTERING_ENABLED] = enabled
+        }
+    }
+
+    suspend fun getHttpsFilteringEnabledSnapshot(): Boolean {
+        return context.dataStore.data.first()[KEY_HTTPS_FILTERING_ENABLED] ?: false
+    }
+
+    suspend fun setSelectedBrowsers(packages: Set<String>) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_SELECTED_BROWSERS] = packages
+        }
+    }
+
+    fun getSelectedBrowsersSnapshot(): Set<String> {
+        // Read synchronously for init — non-suspend for simplicity
+        return try {
+            kotlinx.coroutines.runBlocking {
+                context.dataStore.data.first()[KEY_SELECTED_BROWSERS] ?: emptySet()
+            }
+        } catch (_: Exception) {
+            emptySet()
+        }
     }
 }

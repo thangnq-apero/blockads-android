@@ -47,6 +47,8 @@ import app.pwhs.blockads.ui.splash.SplashScreen
 import app.pwhs.blockads.ui.statistics.StatisticsScreen
 import app.pwhs.blockads.ui.whitelist.AppWhitelistScreen
 import app.pwhs.blockads.ui.whitelistdomain.WhitelistDomainScreen
+import app.pwhs.blockads.ui.wireguard.WireGuardImportScreen
+import app.pwhs.blockads.ui.httpsfiltering.HttpsFilteringScreen
 import kotlinx.serialization.Serializable
 import org.koin.compose.koinInject
 
@@ -146,6 +148,12 @@ data object BlockListDomainKey : NavKey
 
 @Serializable
 data object CustomRuleKey : NavKey
+
+@Serializable
+data object WireGuardImportKey : NavKey
+
+@Serializable
+data object HttpsFilteringKey : NavKey
 
 enum class BottomBarScreen(
     @StringRes val labelRes: Int,
@@ -327,6 +335,14 @@ fun HomeApp(onRequestVpnPermission: () -> Unit = {}) {
                         onNavigateToWhitelistApps = {
                             showBottomBar = false
                             settingsStack.add(WhiteListAppKey)
+                        },
+                        onNavigateToWireGuardImport = {
+                            showBottomBar = false
+                            settingsStack.add(WireGuardImportKey)
+                        },
+                        onNavigateToHttpsFiltering = {
+                            showBottomBar = false
+                            settingsStack.add(HttpsFilteringKey)
                         }
                     )
                 }
@@ -413,6 +429,22 @@ fun HomeApp(onRequestVpnPermission: () -> Unit = {}) {
                 }
                 entry<WhiteListAppKey> {
                     AppWhitelistScreen(
+                        onNavigateBack = {
+                            showBottomBar = true
+                            settingsStack.removeLastOrNull()
+                        }
+                    )
+                }
+                entry<WireGuardImportKey> {
+                    WireGuardImportScreen(
+                        onNavigateBack = {
+                            showBottomBar = true
+                            settingsStack.removeLastOrNull()
+                        }
+                    )
+                }
+                entry<HttpsFilteringKey> {
+                    HttpsFilteringScreen(
                         onNavigateBack = {
                             showBottomBar = true
                             settingsStack.removeLastOrNull()

@@ -12,6 +12,7 @@ import android.os.ParcelFileDescriptor
 import app.pwhs.blockads.MainActivity
 import app.pwhs.blockads.R
 import app.pwhs.blockads.data.datastore.AppPreferences
+import app.pwhs.blockads.data.entities.WireGuardConfig
 import app.pwhs.blockads.data.repository.FilterListRepository
 import app.pwhs.blockads.data.dao.FirewallRuleDao
 import app.pwhs.blockads.util.AppNameResolver
@@ -33,11 +34,15 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import timber.log.Timber
 
 import java.util.Locale
@@ -60,6 +65,23 @@ private data class PrefsSnapshot(
     val firewallEnabled: Boolean,
 )
 
+/**
+ * Represents the true lifecycle state of the VPN engine.
+ * Emitted via [AdBlockVpnService.state] so UI can observe reactively.
+ */
+enum class VpnState {
+    /** Service is not running. */
+    STOPPED,
+    /** Service is starting (loading filters, preparing tunnel). */
+    STARTING,
+    /** Tunnel is established and actively filtering traffic. */
+    RUNNING,
+    /** Service is in the process of shutting down. */
+    STOPPING,
+    /** Service is tearing down and will immediately re-start. */
+    RESTARTING,
+}
+
 class AdBlockVpnService : VpnService() {
 
     companion object {
@@ -75,34 +97,34 @@ class AdBlockVpnService : VpnService() {
         const val ACTION_RESTART = "app.pwhs.blockads.RESTART_VPN"
         const val EXTRA_STARTED_FROM_BOOT = "extra_started_from_boot"
 
+        // ── Reactive VPN state ────────────────────────────────────────
+        private val _state = MutableStateFlow(VpnState.STOPPED)
+
+        /** The single source of truth for VPN lifecycle state. */
+        val state: StateFlow<VpnState> = _state.asStateFlow()
+
+        // Backward-compatible computed aliases (for widgets / tile / etc.)
+        val isRunning: Boolean get() = _state.value == VpnState.RUNNING
+        val isConnecting: Boolean get() = _state.value == VpnState.STARTING
+        val isRestarting: Boolean get() = _state.value == VpnState.RESTARTING
+
+        @Volatile
+        var startTimestamp = 0L
+            private set
+
         /**
          * Request a VPN restart to apply new settings.
          * Only restarts if the VPN is currently running.
          */
         fun requestRestart(context: Context) {
-            if (isRunning || isRestarting) {
+            val s = _state.value
+            if (s == VpnState.RUNNING || s == VpnState.RESTARTING) {
                 val intent = Intent(context, AdBlockVpnService::class.java).apply {
                     action = ACTION_RESTART
                 }
                 context.startService(intent)
             }
         }
-
-        @Volatile
-        var isRestarting = false
-            private set
-
-        @Volatile
-        var isRunning = false
-            private set
-
-        @Volatile
-        var isConnecting = false
-            private set
-
-        @Volatile
-        var startTimestamp = 0L
-            private set
     }
 
     private var vpnInterface: ParcelFileDescriptor? = null
@@ -198,48 +220,46 @@ class AdBlockVpnService : VpnService() {
     }
 
     private fun restartVpn() {
-        if (isRestarting) return
-        if (!isRunning && !isConnecting) return
+        if (_state.value == VpnState.RESTARTING) return
+        val s = _state.value
+        if (s != VpnState.RUNNING && s != VpnState.STARTING) return
 
-        isRestarting = true
+        _state.value = VpnState.RESTARTING
         Timber.d("Restarting VPN to apply new settings")
 
-        // Stop packet processing
-        isRunning = false
-        isConnecting = false
         isReconnecting = true
 
-        // Stop monitoring
+        // Stop monitoring (lightweight, safe on main thread)
         networkMonitor?.stopMonitoring()
         stopBatteryMonitoring()
         stopNotificationUpdates()
 
-        // Stop Go tunnel engine so its running flags are reset
-        goTunnelAdapter.stop()
+        // Move ALL blocking Go native calls off the main thread
+        serviceScope.launch(Dispatchers.IO) {
+            // Stop Go tunnel engine (this is the heavy native call that was causing ANR)
+            goTunnelAdapter.stop()
 
-        // Close current VPN interface
-        try {
-            vpnInterface?.close()
-        } catch (e: Exception) {
-            Timber.e(e, "Error closing VPN interface during restart")
-        }
-        vpnInterface = null
+            // Close current VPN interface
+            try {
+                vpnInterface?.close()
+            } catch (e: Exception) {
+                Timber.e(e, "Error closing VPN interface during restart")
+            }
+            vpnInterface = null
 
-        // Reset retry manager for fresh start
-        retryManager.reset()
+            // Reset retry manager for fresh start
+            retryManager.reset()
 
-        // Brief delay to let old VPN resources (file descriptors, sockets) clean up
-        serviceScope.launch {
+            // Brief delay to let old VPN resources (file descriptors, sockets) clean up
             delay(RESTART_CLEANUP_DELAY_MS)
-
-            isRestarting = false
             startVpn()
         }
     }
 
     private fun startVpn(startedFromBoot: Boolean = false) {
-        if (isRunning || isConnecting) return
-        isConnecting = true
+        val s = _state.value
+        if (s == VpnState.RUNNING || s == VpnState.STARTING) return
+        _state.value = VpnState.STARTING
 
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, buildNotification())
@@ -301,6 +321,9 @@ class AdBlockVpnService : VpnService() {
                     firewallManager = null
                 }
 
+                // Load HTTPS Filtering setting
+                val httpsFilteringEnabled = appPrefs.getHttpsFilteringEnabledSnapshot()
+
                 // Periodically refresh firewall rules and enabled state while the VPN coroutine is running.
                 launch {
                     var lastEnabled = firewallEnabled
@@ -352,7 +375,7 @@ class AdBlockVpnService : VpnService() {
 
                 var vpnEstablished = false
                 while (!vpnEstablished && retryManager.shouldRetry()) {
-                    vpnEstablished = establishVpn(whitelistedApps)
+                    vpnEstablished = establishVpn(whitelistedApps, httpsFilteringEnabled)
 
                     if (!vpnEstablished && retryManager.shouldRetry()) {
                         Timber
@@ -365,7 +388,6 @@ class AdBlockVpnService : VpnService() {
                 if (!vpnEstablished) {
                     Timber
                         .e("Failed to establish VPN after ${retryManager.getMaxRetries()} attempts")
-                    isConnecting = false
                     connectingPhase = ""
                     stopVpn()
                     return@launch
@@ -373,10 +395,9 @@ class AdBlockVpnService : VpnService() {
 
                 // VPN established successfully - reset retry counter
                 retryManager.reset()
-                isConnecting = false
                 connectingPhase = ""
                 isReconnecting = false
-                isRunning = true
+                _state.value = VpnState.RUNNING
                 appPrefs.setVpnEnabled(true)
                 vpnStartTime = System.currentTimeMillis()
                 startTimestamp = vpnStartTime
@@ -424,44 +445,113 @@ class AdBlockVpnService : VpnService() {
                     }
                 }
                 
+                // Read routing mode and WireGuard config from preferences
+                val routingMode = appPrefs.getRoutingModeSnapshot()
+                val wgConfigJson = if (routingMode == AppPreferences.ROUTING_MODE_WIREGUARD) {
+                    appPrefs.getWgConfigJsonSnapshot() ?: ""
+                } else {
+                    ""
+                }
+
+                // Read further HTTPS Filtering config (httpsFilteringEnabled is already loaded at the top)
+                val selectedBrowsers = appPrefs.getSelectedBrowsersSnapshot()
+                val certDir = filesDir.absolutePath
+
                 vpnInterface?.let {
                     // start() blocks the coroutine while reading from TUN
-                    goTunnelAdapter.start(it)
+                    // WireGuard init happens atomically inside Go before any packets are read
+                    goTunnelAdapter.start(it, wgConfigJson, httpsFilteringEnabled, selectedBrowsers, certDir)
                 }
 
             } catch (e: Exception) {
                 Timber.e(e, "VPN startup failed")
-                isConnecting = false
                 stopVpn()
             }
         }
     }
 
-    private fun establishVpn(whitelistedApps: Set<String>): Boolean {
+    private fun establishVpn(whitelistedApps: Set<String>, httpsFilteringEnabled: Boolean): Boolean {
         // First check if the system still grants us the VPN permission.
-        // It's possible another VPN app took over or the user revoked it while the system was off.
         if (VpnService.prepare(this) != null) {
             Timber.e("VPN is not prepared or permission was revoked.")
-            // Stop without a normal notification and show the error badge immediately
             stopVpn(showStoppedNotification = false)
             showRevokedNotification()
             return false
         }
 
         return try {
-            // Establish VPN — only route DNS traffic, NOT all traffic
-            // We use a fake DNS server IP (10.0.0.1) and only route that IP
-            // through the TUN. All other traffic uses the normal network.
-            val builder = Builder()
-                .setSession("BlockAds")
-                .addAddress("10.0.0.2", 32)
-                .addRoute("10.0.0.1", 32)    // Only route fake DNS IP through TUN
-                .addDnsServer("10.0.0.1")     // System sends DNS queries here
-                .addAddress("fd00::2", 128)   // IPv6 TUN address
-                .addRoute("fd00::1", 128)     // Route IPv6 DNS through TUN
-                .addDnsServer("fd00::1")       // IPv6 DNS server
-                .setBlocking(true)
-                .setMtu(1500)
+            // Check routing mode to decide VPN configuration
+            val routingMode = kotlinx.coroutines.runBlocking {
+                appPrefs.getRoutingModeSnapshot()
+            }
+            val wgConfig: WireGuardConfig? = if (routingMode == AppPreferences.ROUTING_MODE_WIREGUARD) {
+                val json = kotlinx.coroutines.runBlocking { appPrefs.getWgConfigJsonSnapshot() }
+                json?.let {
+                    try { WireGuardConfig.fromJson(it) } catch (e: Exception) {
+                        Timber.e(e, "Failed to parse WireGuard config, falling back to direct")
+                        null
+                    }
+                }
+            } else null
+
+            val builder = if (wgConfig != null) {
+                // WireGuard mode — full-route VPN (all traffic through TUN)
+                Timber.d("Establishing VPN in WireGuard mode")
+                val b = Builder()
+                    .setSession("BlockAds WireGuard")
+                    .setBlocking(true)
+                    .setMtu(1280)
+
+                // Add WireGuard interface addresses
+                for (addr in wgConfig.interfaceConfig.address) {
+                    val parts = addr.split("/")
+                    val ip = parts[0]
+                    val prefix = parts.getOrNull(1)?.toIntOrNull()
+                    if (ip.contains(":")) {
+                        b.addAddress(ip, prefix ?: 128)
+                    } else {
+                        b.addAddress(ip, prefix ?: 32)
+                    }
+                }
+
+                // Route ALL traffic through WireGuard
+                b.addRoute("0.0.0.0", 0)
+                b.addRoute("::", 0)
+
+                // DNS servers from WireGuard config
+                for (dnsServer in wgConfig.interfaceConfig.dns) {
+                    try {
+                        b.addDnsServer(dnsServer)
+                    } catch (e: Exception) {
+                        Timber.w(e, "Could not add DNS server: $dnsServer")
+                    }
+                }
+                b
+            } else {
+                // Direct mode — only route DNS traffic
+                Timber.d("Establishing VPN in DNS-only mode")
+                Builder()
+                    .setSession("BlockAds")
+                    .addAddress("10.0.0.2", 32)
+                    .addRoute("10.0.0.1", 32)
+                    .addDnsServer("10.0.0.1")
+                    .addAddress("fd00::2", 128)
+                    .addRoute("fd00::1", 128)
+                    .addDnsServer("fd00::1")
+                    .setBlocking(true)
+                    .setMtu(1500)
+            }
+
+            // Phase 7: Auto-Routing via HTTP Proxy (Android 10+)
+            if (httpsFilteringEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                try {
+                    val proxyInfo = android.net.ProxyInfo.buildDirectProxy("127.0.0.1", 8080)
+                    builder.setHttpProxy(proxyInfo)
+                    Timber.d("VPN Auto-Routing (HTTP Proxy) enabled to 127.0.0.1:8080")
+                } catch (e: Exception) {
+                    Timber.w(e, "Could not set HTTP proxy for VPN")
+                }
+            }
 
             // Exclude our own app from VPN to avoid loops
             try {
@@ -562,46 +652,48 @@ class AdBlockVpnService : VpnService() {
     }
 
     private fun stopVpn(showStoppedNotification: Boolean = true) {
-        isConnecting = false
-        isRunning = false
+        _state.value = VpnState.STOPPING
         isReconnecting = false
-        isRestarting = false
         startTimestamp = 0L
 
-        // Stop Go tunnel engine
-        goTunnelAdapter.stop()
-
-        // Stop network monitoring
+        // Stop monitoring (lightweight, safe on main thread)
         networkMonitor?.stopMonitoring()
-
-        // Stop battery monitoring
         stopBatteryMonitoring()
-
-        // Stop notification updates
         stopNotificationUpdates()
 
-        runBlocking {
-            appPrefs.setVpnEnabled(false)
-        }
+        // Move ALL blocking Go native calls off the main thread
+        serviceScope.launch(Dispatchers.IO) {
+            // Stop Go tunnel engine (this is the heavy native call that was causing ANR)
+            goTunnelAdapter.stop()
 
-        try {
-            vpnInterface?.close()
-        } catch (e: Exception) {
-            Timber.e("Error closing VPN interface: $e")
-        }
-        vpnInterface = null
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        if (showStoppedNotification) {
-            stopForeground(STOP_FOREGROUND_DETACH)
-            showStoppedNotification()
-        } else {
-            stopForeground(STOP_FOREGROUND_REMOVE)
-        }
-        stopSelf()
-        Timber.d("VPN stopped")
+            runBlocking {
+                appPrefs.setVpnEnabled(false)
+            }
 
-        // Update home screen widgets
-        AdBlockWidgetProvider.sendUpdateBroadcast(this)
+            try {
+                vpnInterface?.close()
+            } catch (e: Exception) {
+                Timber.e("Error closing VPN interface: $e")
+            }
+            vpnInterface = null
+
+            // Switch back to main thread for UI/Service lifecycle operations
+            withContext(Dispatchers.Main) {
+                _state.value = VpnState.STOPPED
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                if (showStoppedNotification) {
+                    stopForeground(STOP_FOREGROUND_DETACH)
+                    showStoppedNotification()
+                } else {
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                }
+                stopSelf()
+                Timber.d("VPN stopped")
+
+                // Update home screen widgets
+                AdBlockWidgetProvider.sendUpdateBroadcast(this@AdBlockVpnService)
+            }
+        }
     }
 
     override fun onRevoke() {
@@ -617,10 +709,8 @@ class AdBlockVpnService : VpnService() {
     }
 
     override fun onDestroy() {
-        isConnecting = false
-        isRunning = false
+        _state.value = VpnState.STOPPED
         isReconnecting = false
-        isRestarting = false
         startTimestamp = 0L
 
         // Stop network monitoring

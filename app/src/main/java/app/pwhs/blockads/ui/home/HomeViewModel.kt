@@ -13,11 +13,13 @@ import app.pwhs.blockads.data.entities.ProtectionProfile
 import app.pwhs.blockads.data.entities.TopBlockedDomain
 import app.pwhs.blockads.data.repository.FilterListRepository
 import app.pwhs.blockads.service.AdBlockVpnService
+import app.pwhs.blockads.service.VpnState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -29,12 +31,14 @@ class HomeViewModel(
     profileDao: ProtectionProfileDao,
 ) : ViewModel() {
 
-    // Poll AdBlockVpnService.isRunning for immediate state updates
-    private val _vpnEnabled = MutableStateFlow(AdBlockVpnService.isRunning)
-    val vpnEnabled: StateFlow<Boolean> = _vpnEnabled.asStateFlow()
+    // ── Reactive VPN state (derived from the single source of truth) ──
+    val vpnEnabled: StateFlow<Boolean> = AdBlockVpnService.state
+        .map { it == VpnState.RUNNING }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AdBlockVpnService.isRunning)
 
-    private val _vpnConnecting = MutableStateFlow(AdBlockVpnService.isConnecting)
-    val vpnConnecting: StateFlow<Boolean> = _vpnConnecting.asStateFlow()
+    val vpnConnecting: StateFlow<Boolean> = AdBlockVpnService.state
+        .map { it == VpnState.STARTING || it == VpnState.RESTARTING }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AdBlockVpnService.isConnecting)
 
     val blockedCount: StateFlow<Int> = dnsLogDao.getBlockedCount()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
@@ -75,18 +79,16 @@ class HomeViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), filterRepo.domainCount)
 
     init {
-        // Start polling VPN state
+        // Uptime ticker — only ticks while VPN is RUNNING
         viewModelScope.launch {
             while (isActive) {
-                _vpnEnabled.value = AdBlockVpnService.isRunning
-                _vpnConnecting.value = AdBlockVpnService.isConnecting
                 val startTime = AdBlockVpnService.startTimestamp
                 _protectionUptimeMs.value = if (AdBlockVpnService.isRunning && startTime > 0) {
                     System.currentTimeMillis() - startTime
                 } else {
                     0L
                 }
-                delay(500)
+                delay(1000)
             }
         }
     }

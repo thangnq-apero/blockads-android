@@ -22,6 +22,8 @@ import app.pwhs.blockads.ui.customrules.CustomRulesViewModel
 import app.pwhs.blockads.ui.firewall.FirewallViewModel
 import app.pwhs.blockads.ui.splash.SplashViewModel
 import app.pwhs.blockads.ui.whitelistdomain.WhitelistDomainViewModel
+import app.pwhs.blockads.ui.wireguard.WireGuardImportViewModel
+import app.pwhs.blockads.ui.httpsfiltering.HttpsFilteringViewModel
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.engine.cio.endpoint
@@ -168,6 +170,16 @@ val appModule = module {
     viewModel {
         BlocklistDomainViewModel(
             customDnsRuleDao = get(),
+            application = androidApplication()
+        )
+    }
+    viewModel {
+        WireGuardImportViewModel(
+            application = androidApplication()
+        )
+    }
+    viewModel {
+        HttpsFilteringViewModel(
             application = androidApplication()
         )
     }

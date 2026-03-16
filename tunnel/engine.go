@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -91,6 +92,13 @@ type Engine struct {
 	running bool
 	tunFile *os.File
 
+	// Pipeline components
+	router      *Router
+	interceptor *DnsInterceptor
+
+	// MITM Proxy
+	mitmProxy *MitmProxy
+
 	// Stats
 	totalQueries   atomic.Int64
 	blockedQueries atomic.Int64
@@ -104,10 +112,25 @@ type Stats struct {
 
 // NewEngine creates a new Engine instance.
 func NewEngine() *Engine {
-	return &Engine{
-		safeSearch:   NewSafeSearch(),
-		responseType: ResponseCustomIP,
+	router := NewRouter()
+	e := &Engine{
+		safeSearch:     NewSafeSearch(),
+		responseType:   ResponseCustomIP,
+		router:         router,
 	}
+	e.interceptor = NewDnsInterceptor(e, router)
+	return e
+}
+
+// GetRouter returns the engine's Router for setting outbound adapters.
+func (e *Engine) GetRouter() *Router {
+	return e.router
+}
+
+// SetOutboundAdapter sets the active outbound adapter on the router.
+// Pass nil to switch to DNS-only mode (no proxy).
+func (e *Engine) SetOutboundAdapter(adapter OutboundAdapter) {
+	e.router.SetAdapter(adapter)
 }
 
 // SetDomainChecker sets the Kotlin-side domain checker.
@@ -236,10 +259,17 @@ func (e *Engine) SetYouTubeRestricted(enabled bool) {
 	e.safeSearch.SetYouTubeRestricted(enabled)
 }
 
-// Start begins processing DNS packets from the TUN file descriptor.
+// Start begins processing packets from the TUN file descriptor.
 // protector is called to protect sockets from VPN routing loop.
+// wgConfigJSON: if non-empty, WireGuard is initialized from this JSON config
+// BEFORE the packet read loop starts. Pass "" for DNS-only mode.
+//
 // This function blocks until Stop() is called.
-func (e *Engine) Start(fd int, protector SocketProtector) {
+//
+// Pipeline:
+//   TUN fd → DnsInterceptor → DNS (port 53) → adblock engine
+//                            → non-DNS       → Router → OutboundAdapter
+func (e *Engine) Start(fd int, protector SocketProtector, wgConfigJSON string) {
 	e.mu.Lock()
 	if e.running {
 		e.mu.Unlock()
@@ -278,29 +308,48 @@ func (e *Engine) Start(fd int, protector SocketProtector) {
 
 	logf("Engine started, reading from TUN fd=%d", fd)
 
-	// Packet processing loop
-	buf := make([]byte, 32767) // MAX_PACKET_SIZE
-	for e.running {
-		n, err := e.tunFile.Read(buf)
+	// ── WireGuard Init (before read loop) ────────────────────────────
+	// If wgConfigJSON is provided, set up WireGuard adapter FIRST.
+	// WireGuard must be fully online before we start reading packets.
+	if wgConfigJSON != "" {
+		logf("WireGuard config provided, initializing...")
+
+		wgCfg, err := ParseWgConfigJSON(wgConfigJSON)
 		if err != nil {
-			if e.running {
-				logf("TUN read error: %v", err)
+			logf("WireGuard config parse error: %v", err)
+			// Fall through to DNS-only mode
+		} else {
+			ipcConfig, err := BuildIpcConfig(wgCfg)
+			if err != nil {
+				logf("WireGuard IPC config build error: %v", err)
+			} else {
+				// Create a virtual channelTUN for wireguard-go.
+				// DnsInterceptor is the sole reader of the real TUN.
+				// Non-DNS packets → channelTUN.Inject() → wireguard-go.
+				// Decrypted responses → channelTUN.Write() → real TUN.
+				tunDevice := newChannelTUN(e.tunFile)
+				wgAdapter, err := NewWgOutbound(tunDevice, ipcConfig)
+				if err != nil {
+					logf("WireGuard adapter create error: %v", err)
+				} else {
+					if err := wgAdapter.Start(); err != nil {
+						logf("WireGuard adapter start error: %v", err)
+					} else {
+						e.router.SetAdapter(wgAdapter)
+						logf("WireGuard adapter fully initialized and active")
+					}
+				}
 			}
-			break
 		}
-		if n <= 0 {
-			continue
-		}
-
-		// Parse the IP packet
-		queryInfo := ParseTUNPacket(buf, n)
-		if queryInfo == nil {
-			continue // Not a DNS query, drop silently
-		}
-
-		// Handle DNS query in a goroutine for concurrency
-		go e.handleDNSQuery(queryInfo)
+	} else {
+		logf("No WireGuard config, running in DNS-only mode")
 	}
+
+	// ── Packet Read Loop ─────────────────────────────────────────────
+	// DnsInterceptor reads from TUN, routes DNS to adblock engine,
+	// and non-DNS to Router → active OutboundAdapter.
+	// This call blocks until Stop() is called.
+	e.interceptor.Run(e.tunFile)
 
 	logf("Engine stopped")
 }
@@ -308,16 +357,30 @@ func (e *Engine) Start(fd int, protector SocketProtector) {
 // Stop stops the engine.
 func (e *Engine) Stop() {
 	e.mu.Lock()
-	defer e.mu.Unlock()
 
 	e.running = false
+
+	// Stop the interceptor (breaks the read loop)
+	if e.interceptor != nil {
+		e.interceptor.Stop()
+	}
+
+	// Stop the router and its active adapter
+	if e.router != nil {
+		e.router.Stop()
+	}
+
+	// Grab MITM proxy reference and clear it while locked
+	proxy := e.mitmProxy
+	e.mitmProxy = nil
+
+	// Close TUN, shutdown resolver, clear caches — all while locked
 	if e.tunFile != nil {
-		e.tunFile.Close() // Safely close the duplicated fd
+		e.tunFile.Close()
 		e.tunFile = nil
 	}
 	if e.resolver != nil {
 		e.resolver.Shutdown()
-		// DO NOT set e.resolver = nil to prevent panics in concurrent handleDNSQuery routines
 	}
 	e.safeSearch.ClearCache()
 
@@ -337,6 +400,13 @@ func (e *Engine) Stop() {
 		e.secBloom.Close()
 		e.secBloom = nil
 	}
+
+	e.mu.Unlock()
+
+	// Stop proxy OUTSIDE the lock (proxy.Stop() may block briefly)
+	if proxy != nil {
+		proxy.Stop()
+	}
 }
 
 // IsRunning returns whether the engine is currently running.
@@ -354,6 +424,204 @@ func (e *Engine) GetStats() string {
 	}
 	data, _ := json.Marshal(stats)
 	return string(data)
+}
+
+// ── MITM Proxy API ───────────────────────────────────────────────────────────
+// gomobile-compatible methods for controlling the HTTPS MITM popup blocker.
+
+// StartMitmProxy starts the local HTTPS MITM proxy on the given address
+// (e.g., "127.0.0.1:8080"). certDir is the persistent directory for the
+// Root CA files (e.g., Android's getFilesDir()). Returns the PEM-encoded
+// Root CA certificate that the user must install on their Android device.
+//
+// Returns empty string on error (check logs).
+func (e *Engine) StartMitmProxy(addr string, certDir string) string {
+	e.mu.Lock()
+	if e.mitmProxy != nil {
+		e.mu.Unlock()
+		logf("MITM Proxy already running")
+		return e.mitmProxy.GetCACertPEM()
+	}
+
+	proxy, err := NewMitmProxy(certDir)
+	if err != nil {
+		e.mu.Unlock()
+		logf("Failed to create MITM proxy: %v", err)
+		return ""
+	}
+	// ── Wire ad-block engine into proxy for Gate 1 blocking ──
+	proxy.SetAdBlockChecker(e)
+	e.mitmProxy = proxy
+	e.mu.Unlock()
+
+	caPEM := proxy.GetCACertPEM()
+	logf("MITM Proxy: CA cert generated (%d bytes)", len(caPEM))
+
+	// Bind the listener SYNCHRONOUSLY so the port is open before we return.
+	// This guarantees the VPN can safely route traffic to this address.
+	if err := proxy.Listen(addr); err != nil {
+		e.mu.Lock()
+		e.mitmProxy = nil
+		e.mu.Unlock()
+		logf("MITM Proxy listen error: %v", err)
+		return ""
+	}
+
+	// Accept loop runs in background (Serve() blocks)
+	go func() {
+		if err := proxy.Serve(); err != nil {
+			logf("MITM Proxy serve error: %v", err)
+		}
+	}()
+
+	return caPEM
+}
+
+// StopMitmProxy stops the MITM proxy if it is running.
+func (e *Engine) StopMitmProxy() {
+	e.mu.Lock()
+	proxy := e.mitmProxy
+	e.mitmProxy = nil
+	e.mu.Unlock()
+
+	if proxy != nil {
+		proxy.Stop()
+	}
+}
+
+// GetMitmCACert returns the PEM-encoded Root CA certificate.
+// certDir is the persistent directory where the CA files are stored.
+// If the proxy is running in-memory, it returns its cert. Otherwise it reads from disk.
+// Returns empty string if no CA cert exists.
+func (e *Engine) GetMitmCACert(certDir string) string {
+	e.mu.Lock()
+	proxy := e.mitmProxy
+	e.mu.Unlock()
+
+	// If proxy is active, it has the cert in memory
+	if proxy != nil {
+		return proxy.GetCACertPEM()
+	}
+
+	// Proxy not running in this instance, check disk directly
+	certPath := filepath.Join(certDir, caCertFile)
+	if !fileExists(certPath) {
+		return ""
+	}
+
+	data, err := os.ReadFile(certPath)
+	if err != nil {
+		logf("Failed to read persistent CA cert: %v", err)
+		return ""
+	}
+	return string(data)
+}
+
+// SetMitmAllowedUIDs sets the list of Android app UIDs that are allowed
+// for MITM interception (typically browser UIDs).
+//
+// uidsCsv: comma-separated UIDs, e.g., "10145,10200,10201"
+// gomobile doesn't support []int, so we use a CSV string.
+//
+// Kotlin usage:
+//
+//	val browserUids = listOf(chromeUid, firefoxUid, braveUid)
+//	engine.setMitmAllowedUIDs(browserUids.joinToString(","))
+func (e *Engine) SetMitmAllowedUIDs(uidsCsv string) {
+	e.mu.Lock()
+	proxy := e.mitmProxy
+	e.mu.Unlock()
+
+	if proxy == nil {
+		logf("MITM: SetAllowedUIDs called but proxy not running")
+		return
+	}
+
+	var uids []int
+	for _, s := range strings.Split(uidsCsv, ",") {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+		uid := 0
+		for _, c := range s {
+			if c >= '0' && c <= '9' {
+				uid = uid*10 + int(c-'0')
+			}
+		}
+		if uid > 0 {
+			uids = append(uids, uid)
+		}
+	}
+
+	proxy.GetFilter().SetAllowedUIDs(uids)
+}
+
+// SetCosmeticCSS sets the minified CSS string to inject into HTML responses
+// for cosmetic ad hiding (e.g., EasyList `##.ad-banner` rules).
+//
+// Kotlin usage:
+//
+//	val css = CosmeticRuleParser.parseToCss(lines)
+//	engine.setCosmeticCSS(css)
+func (e *Engine) SetCosmeticCSS(css string) {
+	SetCosmeticCSS(css)
+}
+
+// ── AdBlockChecker implementation ────────────────────────────────────────────
+// IsDomainBlocked satisfies the AdBlockChecker interface used by the MITM
+// proxy.  It replicates the exact same blocking pipeline used for DNS queries:
+//   CustomRule(allow override) → SecurityTrie → AdTrie → Kotlin DomainChecker.
+func (e *Engine) IsDomainBlocked(host string) bool {
+	host = strings.ToLower(strings.TrimSpace(host))
+	if host == "" {
+		return false
+	}
+
+	// ── Custom rule allow/block override ──
+	if e.domainChecker != nil {
+		override := e.domainChecker.HasCustomRule(host)
+		if override == 0 {
+			return false // explicitly allowed
+		}
+		if override == 1 {
+			return true // explicitly blocked
+		}
+	}
+
+	// ── Security trie (Bloom pre-filter → Mmap Trie) ──
+	e.mu.Lock()
+	secBloom := e.secBloom
+	secTrie := e.secTrie
+	adBloom := e.adBloom
+	adTrie := e.adTrie
+	e.mu.Unlock()
+
+	if secTrie != nil {
+		if secBloom == nil || secBloom.MightContainDomainOrParent(host) {
+			if secTrie.ContainsOrParent(host) {
+				return true
+			}
+		}
+	}
+
+	// ── Ad trie (Bloom pre-filter → Mmap Trie) ──
+	if adTrie != nil {
+		if adBloom == nil || adBloom.MightContainDomainOrParent(host) {
+			if adTrie.ContainsOrParent(host) {
+				return true
+			}
+		}
+	}
+
+	// ── Kotlin DomainChecker fallback ──
+	if e.domainChecker != nil {
+		if e.domainChecker.IsBlocked(host) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // handleDNSQuery processes a single DNS query.
