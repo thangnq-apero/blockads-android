@@ -173,12 +173,19 @@ func (p *MitmProxy) handleConnection(clientConn net.Conn) {
 	// Set max lifetime on the client connection
 	clientConn.SetDeadline(time.Now().Add(maxConnLifetime))
 
+	// Set a short read deadline for the initial HTTP header parsing.
+	// This prevents goroutine leaks from stalled/slow connections (Slowloris).
+	clientConn.SetReadDeadline(time.Now().Add(10 * time.Second))
+
 	// Read the HTTP request
 	reader := bufio.NewReader(clientConn)
 	req, err := http.ReadRequest(reader)
 	if err != nil {
-		return // Invalid request, just close
+		return // Invalid or timed-out request, just close
 	}
+
+	// Reset the deadline back to the full connection lifetime
+	clientConn.SetReadDeadline(time.Time{})
 
 	if req.Method == http.MethodConnect {
 		p.handleConnect(clientConn, req)
@@ -201,6 +208,14 @@ func (p *MitmProxy) handleConnect(clientConn net.Conn, req *http.Request) {
 	}
 
 	hostname := hostOnly(host)
+
+	// ── Guard: Block loopback/internal addresses to prevent SSRF ──────
+	// If a malicious app sends CONNECT 127.0.0.1:8080, the proxy would
+	// connect to itself in an infinite loop, exhausting file descriptors.
+	if isLoopbackOrInternal(hostname) {
+		writeHTTPError(clientConn, 403, "Blocked: loopback address")
+		return
+	}
 
 	// ── Gate 1: BLOCK — ad/tracker domain? Drop immediately. ──────────
 	if p.blocker != nil && p.blocker.IsDomainBlocked(hostname) {
@@ -509,4 +524,48 @@ func hostOnly(hostport string) string {
 		return hostport
 	}
 	return host
+}
+
+// isLoopbackOrInternal returns true if the hostname resolves to a loopback
+// or private/internal IP address. This prevents the proxy from connecting
+// back to itself (SSRF infinite loop) or reaching internal network services.
+func isLoopbackOrInternal(hostname string) bool {
+	// Fast-path: check common literal names
+	lower := strings.ToLower(hostname)
+	if lower == "localhost" || lower == "0.0.0.0" || lower == "::" {
+		return true
+	}
+
+	ip := net.ParseIP(hostname)
+	if ip == nil {
+		// Not a literal IP — resolve it
+		addrs, err := net.LookupHost(hostname)
+		if err != nil || len(addrs) == 0 {
+			return false
+		}
+		ip = net.ParseIP(addrs[0])
+		if ip == nil {
+			return false
+		}
+	}
+
+	return ip.IsLoopback() || ip.IsUnspecified() || ip.IsLinkLocalUnicast() || isPrivateIP(ip)
+}
+
+// isPrivateIP checks if an IP is in RFC 1918 private ranges.
+func isPrivateIP(ip net.IP) bool {
+	privateRanges := []struct {
+		network string
+	}{
+		{"10.0.0.0/8"},
+		{"172.16.0.0/12"},
+		{"192.168.0.0/16"},
+	}
+	for _, r := range privateRanges {
+		_, cidr, _ := net.ParseCIDR(r.network)
+		if cidr.Contains(ip) {
+			return true
+		}
+	}
+	return false
 }
