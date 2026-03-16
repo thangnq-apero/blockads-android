@@ -45,9 +45,30 @@ jobs:
       - name: Build debug APK
         run: ./gradlew assembleDebug
 
-      - name: Upload debug APK
+      - name: Upload arm64-v8a APK
         uses: actions/upload-artifact@v4
         with:
-          name: debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          name: BlockAds-arm64-v8a-debug
+          path: app/build/outputs/apk/debug/*arm64-v8a*.apk
+          retention-days: 7
+
+      - name: Upload armeabi-v7a APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: BlockAds-armeabi-v7a-debug
+          path: app/build/outputs/apk/debug/*armeabi-v7a*.apk
+          retention-days: 7
+
+      - name: Upload x86_64 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: BlockAds-x86_64-debug
+          path: app/build/outputs/apk/debug/*x86_64*.apk
+          retention-days: 7
+
+      - name: Upload Universal APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: BlockAds-universal-debug
+          path: app/build/outputs/apk/debug/*universal*.apk
           retention-days: 7
