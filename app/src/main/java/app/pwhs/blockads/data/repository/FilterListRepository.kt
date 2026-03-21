@@ -121,7 +121,7 @@ class FilterListRepository(
                 name = "EasyPrivacy",
                 url = "https://easylist.to/easylist/easyprivacy.txt",
                 description = "Blocks tracking scripts and privacy-invasive trackers",
-                isEnabled = true, isBuiltIn = true,
+                isEnabled = false, isBuiltIn = true,
                 ruleCount = 50933,
                 bloomUrl = "$BASE_BIN_URL/easyprivacy.bloom",
                 trieUrl = "$BASE_BIN_URL/easyprivacy.trie",
@@ -578,7 +578,7 @@ class FilterListRepository(
                 var totalCount = 0
 
                 for (filter in enabledLists) {
-                    if (filter.bloomUrl.isNullOrEmpty() || filter.trieUrl.isNullOrEmpty()) {
+                    if (filter.bloomUrl.isEmpty() || filter.trieUrl.isEmpty()) {
                         Timber.d("Skipping ${filter.name}: no pre-compiled URLs")
                         continue
                     }
@@ -634,7 +634,7 @@ class FilterListRepository(
                 var rulesAdded = 0
 
                 for (filter in validLists) {
-                    if (filter.cssUrl.isNullOrEmpty()) continue
+                    if (filter.cssUrl.isEmpty()) continue
                     val cssFile = File(context.filesDir, "remote_filters/${filter.id}.css")
                     if (cssFile.exists() && cssFile.length() > 0) {
                         val cssSnippet = downloadManager.getInjectableCss(cssFile)
@@ -753,8 +753,6 @@ class FilterListRepository(
             return@withContext matchedListNames
         }
 
-    suspend fun getDomainPreview(filter: FilterList, limit: Int = 100): List<String> = emptyList()
-
     suspend fun checkDomainInFilter(filterId: Long, domain: String): Boolean =
         withContext(Dispatchers.IO) {
             val trieFile = File(context.filesDir, "remote_filters/$filterId.trie")
@@ -768,5 +766,4 @@ class FilterListRepository(
             }
         }
 
-    suspend fun validateFilterUrl(url: String): Result<Boolean> = Result.success(true)
 }
