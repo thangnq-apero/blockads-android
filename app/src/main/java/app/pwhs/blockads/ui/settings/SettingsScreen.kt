@@ -574,7 +574,7 @@ fun SettingsScreen(
                     Spacer(modifier = Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            stringResource(R.string.wireguard_import_title),
+                            stringResource(R.string.wireguard_import_title) + " (BETA)",
                             style = MaterialTheme.typography.titleSmall
                         )
                         Text(
@@ -614,7 +614,7 @@ fun SettingsScreen(
                     Spacer(modifier = Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            stringResource(R.string.https_filtering_title),
+                            stringResource(R.string.https_filtering_title) + " (BETA)",
                             style = MaterialTheme.typography.titleSmall
                         )
                         Text(
