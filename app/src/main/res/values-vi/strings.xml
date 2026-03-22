@@ -203,7 +203,6 @@
     <string name="settings_add_filter_url">URL (định dạng hosts)</string>
     <string name="settings_add">Thêm</string>
     <string name="settings_cancel">Hủy</string>
-    <string name="settings_add_domain_title">Thêm tên miền cho phép</string>
     <string name="settings_add_domain_hint">Tên miền (vd: example.com)</string>
     <string name="settings_auto_reconnect">Tự động kết nối lại</string>
     <string name="settings_auto_reconnect_desc">Khởi động lại chặn quảng cáo khi bật thiết bị</string>
@@ -539,7 +538,6 @@
     <string name="filter_chip_enabled">Đã bật</string>
     <string name="filter_chip_disabled">Đã tắt</string>
 
-    <string name="settings_blocklist_domains">Tên miền bị chặn</string>
     <string name="settings_blocklist_domains_desc">Các tên miền này sẽ luôn bị chặn</string>
     <string name="blocklist_domains_title">Tên miền bị chặn</string>
     <string name="blocklist_domains_subtitle">Các tên miền này sẽ luôn bị chặn</string>
@@ -619,4 +617,6 @@
     <string name="filter_name">Tên bộ lọc</string>
     <string name="filter_url_domain">URL/Tên miền của bộ lọc</string>
     <string name="clear_logs_confirm_message">Bạn có chắc chắn muốn xóa tất cả nhật ký DNS không? Hành động này không thể hoàn tác.</string>
+    <string name="add_blocklist_domains_title">Thêm tên miền bị chặn</string>
+    <string name="add_whitelisted_domain_title">Thêm tên miền được phép</string>
 </resources>

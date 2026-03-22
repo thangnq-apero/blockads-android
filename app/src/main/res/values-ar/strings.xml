@@ -308,7 +308,6 @@
     <string name="settings_add_custom_filter">إضافة قائمة تصفية مخصصة</string>
     <string name="settings_add_domain">إضافة نطاق</string>
     <string name="settings_add_domain_hint">النطاق (مثال: example.com)</string>
-    <string name="settings_add_domain_title">إضافة نطاق للقائمة البيضاء</string>
     <string name="settings_add_filter_name">الاسم</string>
     <string name="settings_add_filter_title">إضافة قائمة تصفية</string>
     <string name="settings_add_filter_url">عنوان URL (تنسيق المضيفين)</string>
@@ -508,7 +507,6 @@
     <string name="profile_name_strict_family">عائلي صارم</string>
     <string name="profile_desc_strict_family">حظر أقصى: الإعلانات، المتتبعات، محتوى البالغين والمقامرة</string>
 
-    <string name="settings_blocklist_domains">النطاقات المحظورة</string>
     <string name="settings_blocklist_domains_desc">سيتم حظر هذه النطاقات دائماً</string>
     <string name="blocklist_domains_title">النطاقات المحظورة</string>
     <string name="blocklist_domains_subtitle">سيتم حظر هذه النطاقات دائماً</string>
@@ -587,4 +585,6 @@
     <string name="filter_name">اسم الفلتر</string>
     <string name="filter_url_domain">رابط/نطاق الفلتر</string>
     <string name="clear_logs_confirm_message">هل أنت متأكد أنك تريد مسح جميع سجلات DNS؟ لا يمكن التراجع عن هذا الإجراء.</string>
+    <string name="add_blocklist_domains_title">إضافة نطاقات محظورة</string>
+    <string name="add_whitelisted_domain_title">إضافة نطاق مسموح به</string>
 </resources>

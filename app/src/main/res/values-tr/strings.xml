@@ -207,7 +207,6 @@ Veri toplama yok. İzleme yok."</string>
     <string name="settings_add_filter_url">"URL (hosts formatı)"</string>
     <string name="settings_add">"Eklemek"</string>
     <string name="settings_cancel">"İptal etmek"</string>
-    <string name="settings_add_domain_title">"Beyaz listeye alınmış alan adını ekle"</string>
     <string name="settings_add_domain_hint">"Alan adı (ör. example.com)"</string>
     <string name="settings_auto_reconnect">"Otomatik yeniden bağlantı"</string>
     <string name="settings_auto_reconnect_desc">"Cihaz açılışında reklam engelleyiciyi yeniden başlat."</string>
@@ -563,7 +562,6 @@ Desteklenen formatlar:
     <string name="filter_chip_disabled">Disabled</string>
     <string name="dns_error_duplicate">Fallback DNS cannot be the same as Custom DNS</string>
 
-    <string name="settings_blocklist_domains">Engellenen Alan Adları</string>
     <string name="settings_blocklist_domains_desc">Bu alan adları her zaman engellenecek</string>
     <string name="blocklist_domains_title">Engellenen Alan Adları</string>
     <string name="blocklist_domains_subtitle">Bu alan adları her zaman engellenecek</string>
@@ -643,4 +641,6 @@ Desteklenen formatlar:
     <string name="filter_name">Filtre Adı</string>
     <string name="filter_url_domain">Filtre URL/Alan Adı</string>
     <string name="clear_logs_confirm_message">Tüm DNS günlüklerini temizlemek istediğinizden emin misiniz? Bu işlem geri alınamaz.</string>
+    <string name="add_blocklist_domains_title">Engellenen Alan Adlarını Ekle</string>
+    <string name="add_whitelisted_domain_title">İzin Verilen Alan Adını Ekle</string>
 </resources>

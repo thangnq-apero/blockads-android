@@ -1,4 +1,4 @@
-package app.pwhs.blockads.ui.settings.component
+package app.pwhs.blockads.ui.domainrules.dialog
 
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -20,6 +20,7 @@ import app.pwhs.blockads.R
 
 @Composable
 fun AddDomainDialog(
+    isAllow: Boolean,
     onDismiss: () -> Unit,
     onAdd: (String) -> Unit,
     modifier: Modifier = Modifier
@@ -30,7 +31,7 @@ fun AddDomainDialog(
         modifier = modifier,
         containerColor = MaterialTheme.colorScheme.background,
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.settings_add_domain_title)) },
+        title = { Text(stringResource(if (isAllow) R.string.add_whitelisted_domain_title else R.string.add_blocklist_domains_title)) },
         text = {
             OutlinedTextField(
                 value = domain,

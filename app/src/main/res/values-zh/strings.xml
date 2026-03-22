@@ -173,7 +173,6 @@
     <string name="settings_add_filter_url">URL（hosts格式）</string>
     <string name="settings_add">添加</string>
     <string name="settings_cancel">取消</string>
-    <string name="settings_add_domain_title">添加域名到白名单</string>
     <string name="settings_add_domain_hint">域名（例如：example.com）</string>
     <string name="settings_auto_reconnect">自动重连</string>
     <string name="settings_auto_reconnect_desc">设备启动时自动重启广告拦截器</string>
@@ -492,7 +491,6 @@
     <string name="filter_chip_enabled">已启用</string>
     <string name="filter_chip_disabled">已禁用</string>
 
-    <string name="settings_blocklist_domains">拦截的域名</string>
     <string name="settings_blocklist_domains_desc">这些域名将始终被拦截</string>
     <string name="blocklist_domains_title">拦截的域名</string>
     <string name="blocklist_domains_subtitle">这些域名将始终被拦截</string>
@@ -572,4 +570,6 @@
     <string name="filter_name">过滤器名称</string>
     <string name="filter_url_domain">过滤器 URL/域名</string>
     <string name="clear_logs_confirm_message">您确定要清除所有 DNS 日志吗？此操作无法撤销。</string>
+    <string name="add_blocklist_domains_title">添加黑名单域名</string>
+    <string name="add_whitelisted_domain_title">添加白名单域名</string>
 </resources>
