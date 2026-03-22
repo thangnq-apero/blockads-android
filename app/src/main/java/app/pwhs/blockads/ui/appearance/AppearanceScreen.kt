@@ -307,6 +307,43 @@ fun AppearanceScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
+
+            // ── Navigation ───────────────────────────────────────────
+            SectionHeader(
+                title = "Navigation",
+                icon = Icons.Default.Menu
+            )
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = stringResource(R.string.settings_show_bottom_nav_labels),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = stringResource(R.string.settings_show_bottom_nav_labels_desc),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = showBottomNavLabels,
+                        onCheckedChange = { viewModel.setShowBottomNavLabels(it) }
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
             // ── Language ───────────────────────────────────────────
             SectionHeader(
                 title = stringResource(R.string.settings_language),
@@ -378,6 +415,26 @@ fun AppearanceScreen(
                             Icons.Default.Language,
                             AppPreferences.LANGUAGE_TR
                         ),
+                        Triple(
+                            R.string.settings_lang_pl,
+                            Icons.Default.Language,
+                            AppPreferences.LANGUAGE_PL
+                        ),
+                        Triple(
+                            R.string.settings_lang_in,
+                            Icons.Default.Language,
+                            AppPreferences.LANGUAGE_IN
+                        ),
+                        Triple(
+                            R.string.settings_lang_pt_br,
+                            Icons.Default.Language,
+                            AppPreferences.LANGUAGE_PT_BR
+                        ),
+                        Triple(
+                            R.string.settings_lang_uk,
+                            Icons.Default.Language,
+                            AppPreferences.LANGUAGE_UK
+                        ),
                     )
                     languages.forEachIndexed { index, (labelRes, icon, langCode) ->
                         Row(
@@ -417,42 +474,6 @@ fun AppearanceScreen(
                             )
                         }
                     }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // ── Navigation ───────────────────────────────────────────
-            SectionHeader(
-                title = "Navigation",
-                icon = Icons.Default.Menu
-            )
-            Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                shape = RoundedCornerShape(16.dp)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = stringResource(R.string.settings_show_bottom_nav_labels),
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = stringResource(R.string.settings_show_bottom_nav_labels_desc),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Switch(
-                        checked = showBottomNavLabels,
-                        onCheckedChange = { viewModel.setShowBottomNavLabels(it) }
-                    )
                 }
             }
 

@@ -197,6 +197,10 @@
     <string name="settings_lang_it" translatable="false">Italiano</string>
     <string name="settings_lang_ar" translatable="false">العربية</string>
     <string name="settings_lang_tr" translatable="false">Türkçe</string>
+    <string name="settings_lang_pl" translatable="false">Polski</string>
+    <string name="settings_lang_in" translatable="false">Bahasa Indonesia</string>
+    <string name="settings_lang_pt_br" translatable="false">Português (Brasil)</string>
+    <string name="settings_lang_uk" translatable="false">Українська</string>
     <string name="settings_high_contrast">High Contrast</string>
     <string name="settings_high_contrast_desc">Increase contrast for better visibility</string>
     <string name="settings_accent_color">Accent Color</string>
