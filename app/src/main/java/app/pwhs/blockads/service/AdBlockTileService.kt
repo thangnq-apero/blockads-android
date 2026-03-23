@@ -1,5 +1,6 @@
 package app.pwhs.blockads.service
 
+import android.annotation.SuppressLint
 import android.content.Intent
 import android.os.Build
 import android.service.quicksettings.Tile
@@ -16,6 +17,7 @@ class AdBlockTileService : TileService() {
         updateTileState()
     }
 
+    @SuppressLint("StartActivityAndCollapseDeprecated")
     override fun onClick() {
         super.onClick()
 
@@ -38,7 +40,6 @@ class AdBlockTileService : TileService() {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                     startActivityAndCollapse(pendingIntent)
                 } else {
-                    @Suppress("DEPRECATION")
                     startActivityAndCollapse(intent)
                 }
                 return
