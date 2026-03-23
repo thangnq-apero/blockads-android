@@ -20,6 +20,15 @@ enum class DnsCategory {
 }
 
 object DnsProviders {
+    val SYSTEM = DnsProvider(
+        id = "system",
+        name = "System Default",
+        category = DnsCategory.STANDARD,
+        ipAddress = "0.0.0.0", // Dynamically resolved at runtime
+        dohUrl = null,
+        description = "Use your network's default DNS servers"
+    )
+
     val GOOGLE = DnsProvider(
         id = "google",
         name = "Google DNS",
@@ -93,6 +102,7 @@ object DnsProviders {
     )
 
     val ALL_PROVIDERS = listOf(
+        SYSTEM,
         ADGUARD,
         CLOUDFLARE,
         CLOUDFLARE_FAMILY,

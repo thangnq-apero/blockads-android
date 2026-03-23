@@ -17,7 +17,8 @@ import timber.log.Timber
 class NetworkMonitor(
     context: Context,
     private val onNetworkAvailable: () -> Unit,
-    private val onNetworkLost: () -> Unit
+    private val onNetworkLost: () -> Unit,
+    private val onLinkPropertiesChanged: ((android.net.LinkProperties) -> Unit)? = null
 ) {
     private val connectivityManager =
         context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
@@ -40,6 +41,11 @@ class NetworkMonitor(
             val hasValidated =
                 capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
             Timber.d("Network capabilities changed: hasInternet=$hasInternet, validated=$hasValidated")
+        }
+
+        override fun onLinkPropertiesChanged(network: Network, linkProperties: android.net.LinkProperties) {
+            super.onLinkPropertiesChanged(network, linkProperties)
+            onLinkPropertiesChanged?.invoke(linkProperties)
         }
     }
 

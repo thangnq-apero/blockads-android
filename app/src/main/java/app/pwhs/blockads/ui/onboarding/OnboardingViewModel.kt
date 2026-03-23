@@ -61,6 +61,7 @@ class OnboardingViewModel(
         return when (primary.id) {
             DnsProviders.QUAD9.id -> DnsProviders.ADGUARD
             DnsProviders.ADGUARD.id -> DnsProviders.QUAD9
+            DnsProviders.SYSTEM.id -> DnsProviders.QUAD9
             else -> DnsProviders.ALL_PROVIDERS.firstOrNull {
                 it.id != primary.id
             } ?: DnsProviders.QUAD9

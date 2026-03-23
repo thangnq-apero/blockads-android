@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
@@ -63,6 +64,7 @@ private data class PrefsSnapshot(
     val safeSearchEnabled: Boolean,
     val youtubeRestrictedMode: Boolean,
     val firewallEnabled: Boolean,
+    val dnsProviderId: String?
 )
 
 /**
@@ -193,7 +195,26 @@ class AdBlockVpnService : VpnService() {
         networkMonitor = NetworkMonitor(
             context = this,
             onNetworkAvailable = { onNetworkAvailable() },
-            onNetworkLost = { onNetworkLost() }
+            onNetworkLost = { onNetworkLost() },
+            onLinkPropertiesChanged = { linkProperties ->
+                serviceScope.launch {
+                    val providerId = appPrefs.dnsProviderId.first()
+                    if (providerId == "system") {
+                        val newDns = linkProperties.dnsServers.mapNotNull { it.hostAddress }
+                            .filter { it.isNotEmpty() }
+                        val primary = newDns.firstOrNull() ?: "8.8.8.8"
+                        Timber.d("Network LinkProperties changed, hot-reloading System DNS: $primary")
+                        val fallback = appPrefs.fallbackDns.first()
+                        val dohUrl = appPrefs.dohUrl.first()
+                        goTunnelAdapter.configureDns(
+                            protocol = "PLAIN",
+                            primary = primary,
+                            fallback = fallback,
+                            dohUrl = dohUrl
+                        )
+                    }
+                }
+            }
         )
     }
 
@@ -299,7 +320,7 @@ class AdBlockVpnService : VpnService() {
                 val (
                     upstreamDns, fallbackDns, dnsResponseType, dnsProtocol,
                     dohUrl, whitelistedApps, safeSearchEnabled,
-                    youtubeRestrictedMode, firewallEnabled
+                    youtubeRestrictedMode, firewallEnabled, dnsProviderId
                 ) = coroutineScope {
                     val d1 = async { appPrefs.upstreamDns.first() }
                     val d2 = async { appPrefs.fallbackDns.first() }
@@ -310,9 +331,10 @@ class AdBlockVpnService : VpnService() {
                     val d7 = async { appPrefs.safeSearchEnabled.first() }
                     val d8 = async { appPrefs.youtubeRestrictedMode.first() }
                     val d9 = async { appPrefs.firewallEnabled.first() }
+                    val d10 = async { appPrefs.dnsProviderId.first() }
                     PrefsSnapshot(
                         d1.await(), d2.await(), d3.await(), d4.await(),
-                        d5.await(), d6.await(), d7.await(), d8.await(), d9.await()
+                        d5.await(), d6.await(), d7.await(), d8.await(), d9.await(), d10.await()
                     )
                 }
 
@@ -431,10 +453,25 @@ class AdBlockVpnService : VpnService() {
                 // Start periodic notification updates with stats
                 startNotificationUpdates()
 
+                var finalUpstreamDns = upstreamDns
+                var finalDnsProtocol = dnsProtocol.name
+
+                if (dnsProviderId == "system") {
+                    val systemDnsList = getSystemDnsServers(this@AdBlockVpnService)
+                    if (systemDnsList.isNotEmpty()) {
+                        finalUpstreamDns = systemDnsList.first()
+                        Timber.d("System DNS resolved to: $finalUpstreamDns")
+                    } else {
+                        finalUpstreamDns = "8.8.8.8" // Fallback
+                        Timber.d("System DNS empty, falling back to 8.8.8.8")
+                    }
+                    finalDnsProtocol = "PLAIN" // System DNS is always plain UDP/TCP
+                }
+
                 // Configure and start Go tunnel engine
                 goTunnelAdapter.configureDns(
-                    protocol = dnsProtocol.name,
-                    primary = upstreamDns,
+                    protocol = finalDnsProtocol,
+                    primary = finalUpstreamDns,
                     fallback = fallbackDns,
                     dohUrl = dohUrl
                 )
@@ -1057,5 +1094,13 @@ class AdBlockVpnService : VpnService() {
      */
     fun protectSocket(fd: Int): Boolean {
         return protect(fd)
+    }
+
+    private fun getSystemDnsServers(context: Context): List<String> {
+        val connectivityManager =
+            context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val activeNetwork = connectivityManager.activeNetwork ?: return emptyList()
+        val linkProperties = connectivityManager.getLinkProperties(activeNetwork) ?: return emptyList()
+        return linkProperties.dnsServers.mapNotNull { it.hostAddress }.filter { it.isNotEmpty() }
     }
 }

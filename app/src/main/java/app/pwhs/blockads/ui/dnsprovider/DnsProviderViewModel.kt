@@ -103,6 +103,7 @@ class DnsProviderViewModel(
             val fallbackProvider = when (provider.id) {
                 DnsProviders.QUAD9.id -> DnsProviders.ADGUARD
                 DnsProviders.ADGUARD.id -> DnsProviders.QUAD9
+                DnsProviders.SYSTEM.id -> DnsProviders.QUAD9
                 else -> {
                     // Find first privacy provider different from selected
                     DnsProviders.ALL_PROVIDERS.firstOrNull {
