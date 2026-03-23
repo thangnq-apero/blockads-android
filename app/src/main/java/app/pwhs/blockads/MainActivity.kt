@@ -16,6 +16,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.core.content.ContextCompat
 import app.pwhs.blockads.data.datastore.AppPreferences
 import app.pwhs.blockads.utils.LocaleHelper
@@ -30,10 +31,12 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_START_VPN = "extra_start_vpn"
+        const val EXTRA_SHOW_VPN_CONFLICT_DIALOG = "extra_show_vpn_conflict_dialog"
         const val ACTION_TOGGLE_SHORTCUT = "app.pwhs.blockads.ACTION_TOGGLE_SHORTCUT"
     }
 
     private var widgetIntentHandled = false
+    private val _showVpnConflictDialog = mutableStateOf(false)
 
     private val vpnPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -96,9 +99,16 @@ class MainActivity : ComponentActivity() {
 
             BlockadsTheme(themeMode = themeMode, accentColor = accentColor) {
                 BlockAdsApp(
+                    showVpnConflictDialog = _showVpnConflictDialog.value,
+                    onDismissVpnConflictDialog = { _showVpnConflictDialog.value = false },
+                    onShowVpnConflictDialog = { _showVpnConflictDialog.value = true },
                     onRequestVpnPermission = { handleVpnToggle() }
                 )
             }
+        }
+        if (intent?.getBooleanExtra(EXTRA_SHOW_VPN_CONFLICT_DIALOG, false) == true) {
+            _showVpnConflictDialog.value = true
+            intent.removeExtra(EXTRA_SHOW_VPN_CONFLICT_DIALOG)
         }
         handleWidgetIntent(intent)
         handleShortcutIntent(intent)
@@ -107,6 +117,10 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        if (intent.getBooleanExtra(EXTRA_SHOW_VPN_CONFLICT_DIALOG, false)) {
+            _showVpnConflictDialog.value = true
+            intent.removeExtra(EXTRA_SHOW_VPN_CONFLICT_DIALOG)
+        }
         widgetIntentHandled = false
         handleWidgetIntent(intent)
         handleShortcutIntent(intent)

@@ -592,4 +592,7 @@
     <string name="add_blocklist_domains_title">Dodaj zablokowane domeny</string>
     <string name="add_whitelisted_domain_title">Dodaj domenę do białej listy</string>
     <string name="onboarding_battery_unsupported">Nieobsługiwane</string>
+    <string name="vpn_conflict_title">Połączenie Zablokowane</string>
+    <string name="vpn_conflict_desc">System Android zezwala tylko na jedno aktywne połączenie VPN. Obecnie na Twoim urządzeniu działa inny VPN.\n\nZanim połączysz się z BlockAds, rozłącz inny VPN lub wyłącz „Zawsze włączony VPN” w Ustawieniach.</string>
+    <string name="open_settings">Otwórz Ustawienia</string>
 </resources>

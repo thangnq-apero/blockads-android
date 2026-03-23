@@ -641,4 +641,7 @@ Desteklenen formatlar:
     <string name="add_blocklist_domains_title">Engellenen Alan Adlarını Ekle</string>
     <string name="add_whitelisted_domain_title">İzin Verilen Alan Adını Ekle</string>
     <string name="onboarding_battery_unsupported">Desteklenmiyor</string>
+    <string name="vpn_conflict_title">Bağlantı Engellendi</string>
+    <string name="vpn_conflict_desc">Android aynı anda yalnızca bir VPN bağlantısına izin verir. Şu anda cihazınızda başka bir VPN aktif.\n\nBlockAds\'e bağlanmadan önce lütfen diğer VPN\'in bağlantısını kesin veya Ayarlar\'dan \"Her zaman açık VPN\"i devre dışı bırakın.</string>
+    <string name="open_settings">Ayarları Aç</string>
 </resources>

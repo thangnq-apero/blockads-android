@@ -593,4 +593,7 @@
     <string name="add_blocklist_domains_title">Додати заблоковані домени</string>
     <string name="add_whitelisted_domain_title">Додати домен у білий список</string>
     <string name="onboarding_battery_unsupported">Не підтримується</string>
+    <string name="vpn_conflict_title">З\'єднання заблоковано</string>
+    <string name="vpn_conflict_desc">Android дозволяє лише одне активне VPN-з\'єднання одночасно. На вашому пристрої зараз працює інший VPN.\n\nБудь ласка, відключіть інший VPN або вимкніть «Постійний VPN» у Налаштуваннях перед підключенням BlockAds.</string>
+    <string name="open_settings">Відкрити налаштування</string>
 </resources>

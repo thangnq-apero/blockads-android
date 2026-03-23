@@ -620,4 +620,7 @@
     <string name="clear_logs_confirm_message">Bạn có chắc chắn muốn xóa tất cả nhật ký DNS không? Hành động này không thể hoàn tác.</string>
     <string name="add_blocklist_domains_title">Thêm tên miền bị chặn</string>
     <string name="add_whitelisted_domain_title">Thêm tên miền được phép</string>
+    <string name="vpn_conflict_title">Kết nối bị chặn</string>
+    <string name="vpn_conflict_desc">Android chỉ cho phép một kết nối VPN hoạt động cùng lúc. Một VPN khác đang chạy trên thiết bị của bạn.\n\nVui lòng ngắt kết nối VPN kia hoặc tắt \"VPN luôn bật\" trong Cài đặt trước khi kết nối BlockAds.</string>
+    <string name="open_settings">Mở Cài đặt</string>
 </resources>

@@ -570,4 +570,7 @@
     <string name="add_blocklist_domains_title">차단된 도메인 추가</string>
     <string name="add_whitelisted_domain_title">허용된 도메인 추가</string>
     <string name="onboarding_battery_unsupported">지원되지 않음</string>
+    <string name="vpn_conflict_title">연결 차단됨</string>
+    <string name="vpn_conflict_desc">Android는 한 번에 하나의 VPN 연결만 허용합니다. 현재 기기에서 다른 VPN이 활성화되어 있습니다.\n\nBlockAds를 연결하기 전에 다른 VPN의 연결을 해제하거나 설정에서 \"항상 켜진 VPN\"을 비활성화하세요.</string>
+    <string name="open_settings">설정 열기</string>
 </resources>

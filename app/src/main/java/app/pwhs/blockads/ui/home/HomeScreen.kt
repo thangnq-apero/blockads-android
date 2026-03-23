@@ -83,6 +83,7 @@ import app.pwhs.blockads.utils.formatDataSize
 import app.pwhs.blockads.utils.formatTimeSince
 import app.pwhs.blockads.utils.formatUptimeShort
 import app.pwhs.blockads.utils.profileIcon
+import app.pwhs.blockads.utils.VpnUtils
 import com.google.accompanist.drawablepainter.rememberDrawablePainter
 import org.koin.androidx.compose.koinViewModel
 import java.util.Locale
@@ -90,6 +91,7 @@ import java.util.Locale
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
+    onShowVpnConflictDialog: () -> Unit = {},
     onRequestVpnPermission: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: HomeViewModel = koinViewModel(),
@@ -294,7 +296,11 @@ fun HomeScreen(
                         if (vpnEnabled) {
                             viewModel.stopVpn(context)
                         } else {
-                            onRequestVpnPermission()
+                            if (VpnUtils.isOtherVpnActive(context)) {
+                                onShowVpnConflictDialog()
+                            } else {
+                                onRequestVpnPermission()
+                            }
                         }
                     }
                 }

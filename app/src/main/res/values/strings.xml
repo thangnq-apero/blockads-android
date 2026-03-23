@@ -461,6 +461,10 @@
     <string name="stats_per_app">Per-App Statistics</string>
     <string name="stats_app_queries_blocked">%1$s queries · %2$s blocked</string>
 
+    <string name="vpn_conflict_title">Connection Blocked</string>
+    <string name="vpn_conflict_desc">Android only allows one VPN connection at a time. Another VPN is currently active on your device.\n\nPlease disconnect the other VPN first or disable \"Always-on VPN\" in Settings before connecting BlockAds.</string>
+    <string name="open_settings">Open Settings</string>
+
     <!-- VPN Connecting Phases (progress feedback) -->
     <string name="vpn_phase_loading_filters">Loading filter lists…</string>
     <string name="vpn_phase_preparing_dns">Preparing DNS…</string>

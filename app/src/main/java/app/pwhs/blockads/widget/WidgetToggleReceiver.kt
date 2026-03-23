@@ -6,6 +6,7 @@ import android.content.Intent
 import android.os.Build
 import app.pwhs.blockads.MainActivity
 import app.pwhs.blockads.service.AdBlockVpnService
+import app.pwhs.blockads.utils.VpnUtils
 import timber.log.Timber
 
 /**
@@ -33,6 +34,16 @@ class WidgetToggleReceiver : BroadcastReceiver() {
             }
             context.startService(stopIntent)
         } else {
+            if (VpnUtils.isOtherVpnActive(context)) {
+                Timber.w("Another VPN is active, dropping widget connection request")
+                val appIntent = Intent(context, MainActivity::class.java).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    putExtra(MainActivity.EXTRA_SHOW_VPN_CONFLICT_DIALOG, true)
+                }
+                context.startActivity(appIntent)
+                return
+            }
+
             val startIntent = Intent(context, AdBlockVpnService::class.java).apply {
                 action = AdBlockVpnService.ACTION_START
             }

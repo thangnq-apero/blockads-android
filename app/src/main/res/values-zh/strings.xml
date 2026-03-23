@@ -570,4 +570,7 @@
     <string name="add_blocklist_domains_title">添加黑名单域名</string>
     <string name="add_whitelisted_domain_title">添加白名单域名</string>
     <string name="onboarding_battery_unsupported">暂不支持</string>
+    <string name="vpn_conflict_title">连接已拦截</string>
+    <string name="vpn_conflict_desc">Android 同时只允许一个 VPN 连接。您的设备上当前有另一个 VPN 正在运行。\n\n在连接 BlockAds 之前，请先断开另一个 VPN 或在设置中禁用“始终开启的 VPN”。</string>
+    <string name="open_settings">打开设置</string>
 </resources>

@@ -625,4 +625,7 @@
     <string name="add_blocklist_domains_title">Aggiungi domini bloccati</string>
     <string name="add_whitelisted_domain_title">Aggiungi dominio consentito</string>
     <string name="onboarding_battery_unsupported">Non supportato</string>
+    <string name="vpn_conflict_title">Connessione Bloccata</string>
+    <string name="vpn_conflict_desc">Android consente solo una connessione VPN alla volta. Un\'altra VPN è attualmente attiva sul tuo dispositivo.\n\nScollega prima l\'altra VPN o disattiva \"VPN sempre attiva\" nelle Impostazioni prima di connettere BlockAds.</string>
+    <string name="open_settings">Apri Impostazioni</string>
 </resources>
